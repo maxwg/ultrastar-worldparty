@@ -32,8 +32,11 @@ program WorldParty;
 {$I switches.inc}
 
 uses
+  {$IFDEF Linux}
+  cmem,                // Use C allocation for memory shared with SDL-created threads.
+  {$ENDIF}
   {$IFDEF Unix}
-  cthreads,            // THIS MUST be the first used unit in FPC if Threads are used!!
+  cthreads,            // Install threading before other units (after the memory manager).
                        // (see http://wiki.lazarus.freepascal.org/Multithreaded_Application_Tutorial)
   cwstring,            // Enable Unicode support
   {$ENDIF}
@@ -143,6 +146,8 @@ uses
   ULanguage         in 'base\ULanguage.pas',
   UMain             in 'base\UMain.pas',
   UDraw             in 'base\UDraw.pas',
+  UPitchDisplay     in 'base\UPitchDisplay.pas',
+  UArtistNavigation in 'base\UArtistNavigation.pas',
   URecord           in 'base\URecord.pas',
   UTime             in 'base\UTime.pas',
   USong             in 'base\USong.pas',

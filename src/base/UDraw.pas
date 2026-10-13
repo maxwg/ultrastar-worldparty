@@ -107,12 +107,150 @@ uses
   UParty,
   UMusic,
   URecord,
+  UPitchDisplay,
   UScreenSingController,
   UScreenJukebox,
   USong,
   UTexture,
   UWebcam;
 
+
+type
+  TPitchPanel = record
+    X, Y, W: Real;
+    Lines, Player, Space: Integer;
+  end;
+  TPitchTracePoint = record
+    Beat, Midi, Volume: Double;
+    Valid: Boolean;
+  end;
+  TPitchTrace = record
+    Points: array[0..1023] of TPitchTracePoint;
+    Count, LineStart: Integer;
+    LastTick: Cardinal;
+  end;
+var
+  PitchTraces: array[0..IMaxPlayerCount-1] of TPitchTrace;
+  PitchPanels: array[0..IMaxPlayerCount-1] of TPitchPanel;
+  PitchPanelCount: Integer;
+
+{ Draw after every player's target/scoring bars, so overlays stay on top. }
+procedure DrawPitchOverlays;
+var
+  P, N, Cents, T: Integer;
+  Scale, PX, PY, H, MinY, MaxY, TX, TY, TX2, TY2: Real;
+  Estimate: TPitchEstimate;
+  LabelText: UTF8String;
+begin
+  for P := 0 to PitchPanelCount-1 do
+  with PitchPanels[P] do
+  begin
+    if (Ini.DetectedPitch <> 1) or ScreenSing.Paused then
+      PitchTraces[Player].Count := 0;
+    if (ScreenSing.settings.NotesVisible and (1 shl Lines) = 0) then Continue;
+    with CurrentSong.Lines[Lines].Line[CurrentSong.Lines[Lines].Current] do
+    begin
+      if not HasLength(Scale) then Continue;
+      Scale := W / Scale;
+      SetFontStyle(ftOutline2);
+      ResetFont;
+      SetOutlineColor(0, 0, 0, 0.9);
+      SetFontSize(14);
+      glColor4f(1, 1, 1, 0.75);
+      if Ini.NoteNames = 1 then
+      for N := 0 to HighNote do
+        if Note[N].NoteType in [ntNormal, ntGolden] then
+        begin
+          PX := X + (Note[N].Start - Note[0].Start)*Scale + 10*ScreenX + 2;
+          PY := Y - (Note[N].Tone-BaseNote)*Space/2 - NotesH[Player] - 13;
+          LabelText := PitchName(Note[N].Tone+60);
+          { Skip labels that cannot fit their note instead of overlapping. }
+          if glTextWidth(LabelText) <= Note[N].Length*Scale then
+          begin
+            SetFontPos(PX, PY);
+            glPrint(LabelText);
+          end;
+        end;
+      if (Ini.DetectedPitch = 1) and not ScreenSing.Paused and
+         (Player < Length(AudioInputProcessor.Sound)) then
+      begin
+        Estimate := AudioInputProcessor.Sound[Player].RawPitch;
+        with PitchTraces[Player] do
+        begin
+          if (LineStart <> Note[0].Start) or
+             ((Count > 0) and (LyricsState.MidBeatD < Points[Count-1].Beat)) or
+             (Cardinal(SDL_GetTicks-LastTick) > 1000) then Count := 0;
+          LineStart := Note[0].Start;
+          if (Count = 0) or (Cardinal(SDL_GetTicks-LastTick) >= 33) then
+          begin
+            if Count = Length(Points) then
+            begin
+              Move(Points[1], Points[0], (Count-1)*SizeOf(Points[0]));
+              Dec(Count);
+            end;
+            Points[Count].Beat := LyricsState.MidBeatD;
+            Points[Count].Midi := Estimate.Midi;
+            Points[Count].Volume := Estimate.Volume;
+            Points[Count].Valid := Estimate.Valid;
+            Inc(Count);
+            LastTick := SDL_GetTicks;
+          end;
+        end;
+        PX := X + (LyricsState.MidBeatD-Note[0].Start)*Scale + 10*ScreenX;
+        if (PX < X+10*ScreenX) or (PX > X+W+10*ScreenX) then Continue;
+        { UltraStar pitch zero is MIDI 60/C4. Never fold the detected octave. }
+        PY := Y - (Estimate.Midi-60-BaseNote)*Space/2;
+        MinY := Y-100;
+        MaxY := Y+20;
+        H := 0.6 + Min(2.4, Estimate.Volume*12);
+        glDisable(GL_TEXTURE_2D);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glColor4f(0.8, 0.95, 1, 0.6);
+        with PitchTraces[Player] do
+        for T := 1 to Count-1 do
+          if Points[T-1].Valid and Points[T].Valid then
+          begin
+            TX := X+(Points[T-1].Beat-Note[0].Start)*Scale+10*ScreenX;
+            TX2 := X+(Points[T].Beat-Note[0].Start)*Scale+10*ScreenX;
+            TY := Y-(Points[T-1].Midi-60-BaseNote)*Space/2;
+            TY2 := Y-(Points[T].Midi-60-BaseNote)*Space/2;
+            H := 0.6 + Min(2.4, Points[T].Volume*12);
+            if (TX >= X+10*ScreenX) and (TX2 <= X+W+10*ScreenX) and
+               (TY >= MinY) and (TY <= MaxY) and (TY2 >= MinY) and (TY2 <= MaxY) then
+            begin
+              glColor4f(0.05, 0.10, 0.15, 0.4);
+              glBegin(GL_QUADS);
+              glVertex2f(TX, TY-H/2-0.5);
+              glVertex2f(TX2, TY2-H/2-0.5);
+              glVertex2f(TX2, TY2+H/2+0.5);
+              glVertex2f(TX, TY+H/2+0.5);
+              glEnd;
+              glColor4f(0.8, 0.95, 1, 0.6);
+              glBegin(GL_QUADS);
+              glVertex2f(TX, TY-H/2);
+              glVertex2f(TX2, TY2-H/2);
+              glVertex2f(TX2, TY2+H/2);
+              glVertex2f(TX, TY+H/2);
+              glEnd;
+            end;
+          end;
+        if not Estimate.Valid then Continue;
+        Cents := Round((Estimate.Midi-Round(Estimate.Midi))*100);
+        LabelText := PitchName(Round(Estimate.Midi)) + ' ' +
+          FormatFloat('0.0', Estimate.Hz) + ' Hz ' + IntToStr(Cents) + 'c';
+        if PY < MinY then LabelText := LabelText + ' (above range)';
+        if PY > MaxY then LabelText := LabelText + ' (below range)';
+        glColor4f(0.8, 0.95, 1, 0.75);
+        SetFontPos(X+W+10*ScreenX-glTextWidth(LabelText), MaxY+3);
+        glPrint(LabelText);
+      end;
+    end;
+  end;
+  ResetFont;
+  glDisable(GL_BLEND);
+  glDisable(GL_TEXTURE_2D);
+end;
 
 procedure SingDrawWebCamFrame;
 begin
@@ -571,6 +709,16 @@ var
 //  R, G, B, A: real;
   NotesH2:    real;
 begin
+  if PitchPanelCount < Length(PitchPanels) then
+  begin
+    PitchPanels[PitchPanelCount].X := X;
+    PitchPanels[PitchPanelCount].Y := Y;
+    PitchPanels[PitchPanelCount].W := W;
+    PitchPanels[PitchPanelCount].Lines := NrLines;
+    PitchPanels[PitchPanelCount].Player := PlayerIndex;
+    PitchPanels[PitchPanelCount].Space := Space;
+    Inc(PitchPanelCount);
+  end;
   Rec.Right := 0;
   Rec.Left := 0;
   Rec.Top := 0;
@@ -1171,6 +1319,7 @@ var
   I: integer;
   Difficulty: integer;
 begin
+  PitchPanelCount := 0;
   // positions
   if Ini.SingWindow = 0 then
     NR.Left := 120
@@ -1764,6 +1913,7 @@ begin
       end;
     end;
   end;
+  DrawPitchOverlays;
   glDisable(GL_BLEND);
   glDisable(GL_TEXTURE_2D);
 end;

@@ -37,7 +37,7 @@ uses
   SysUtils,
   UCommon,
   UMusic,
-  UIni;
+  UIni, UPitchDisplay;
 
 const
   BaseToneFreq = 65.4064; // lowest (half-)tone to analyze (C2 = 65.4064 Hz)
@@ -49,6 +49,7 @@ type
       fVoiceStream: TAudioVoiceStream; // stream for voice passthrough
       fAnalysisBufferLock: PSDL_Mutex;
       fAudioFormat: TAudioFormatInfo;
+      fLastCaptureTick: Cardinal;
 
       function GetToneString: string; // converts a tone to its string represenatation;
 
@@ -72,6 +73,7 @@ type
       // TODO: remove ToneValid, set Tone/ToneAbs=-1 if invalid instead
       ToneValid:    boolean;    // true if Tone contains a valid value (otherwise it contains noise)
       Tone:         integer;    // tone relative to one octave (e.g. C2=C3=C4). Range: 0-11
+      RawPitch: TPitchEstimate; // continuous, never octave-folded for scoring
       ToneAbs:      integer;    // absolute (full range) tone (e.g. C2<>C3). Range: 0..NumHalftones-1
 
       // methods
@@ -279,6 +281,8 @@ begin
   if assigned(LogBuffer) then
     LogBuffer.Clear;
   LockAnalysisBuffer();
+  fLastCaptureTick := 0;
+  FillChar(RawPitch, SizeOf(RawPitch), 0);
   FillChar(AnalysisBuffer[0], Length(AnalysisBuffer) * SizeOf(SmallInt), 0);
   UnlockAnalysisBuffer();
 end;
@@ -321,6 +325,7 @@ begin
     for i := 0 to High(AnalysisBuffer)-SampleCount do
       AnalysisBuffer[i] := AnalysisBuffer[i+SampleCount];
 
+    if SampleCount > 0 then fLastCaptureTick := SDL_GetTicks;
     // copy new samples to analysis buffer
     Move(Buffer[BufferOffset], AnalysisBuffer[Length(AnalysisBuffer)-SampleCount],
          SampleCount * SizeOf(SmallInt));
@@ -347,12 +352,17 @@ var
   SampleIndex: integer;
   Threshold:   single;
 begin
+  FillChar(RawPitch, SizeOf(RawPitch), 0);
   ToneValid := false;
   ToneAbs := -1;
   Tone    := -1;
 
   LockAnalysisBuffer();
   try
+
+    if (Ini.DetectedPitch = 1) and (fLastCaptureTick <> 0) and
+       (Cardinal(SDL_GetTicks - fLastCaptureTick) < 250) then
+      RawPitch := EstimatePitch(AnalysisBuffer, AudioFormat.SampleRate);
 
     // find maximum volume of first 1024 samples
     MaxVolume := 0;

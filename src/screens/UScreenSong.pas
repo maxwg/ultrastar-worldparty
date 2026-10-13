@@ -30,6 +30,7 @@ interface
 {$I switches.inc}
 
 uses
+  UArtistNavigation,
   UAvatars,
   UCommon,
   UIni,
@@ -45,6 +46,15 @@ type
   TVisArr = array of integer;
 
   TScreenSong = class(TMenu)
+    private
+      ArtistTargets: TArtistTargets;
+      ArtistLetters: array[0..ArtistBucketCount - 1] of Integer;
+      procedure RebuildArtistIndex;
+      function ArtistScrollerVisible: Boolean;
+      procedure JumpArtistBucket(Bucket: Integer);
+      procedure StepArtistBucket(Direction: Integer);
+      procedure UpdateArtistScroller;
+      function ArtistScrollerMouse(MouseButton: Integer; BtnDown: Boolean; X, Y: Integer): Boolean;
     private
       DefaultCover: TTexture;
       Equalizer: Tms_Equalizer;
@@ -240,9 +250,85 @@ uses
   UUnicodeUtils;
 
 const
+  ARTIST_RAIL_X = 260;
+  ARTIST_RAIL_Y = 510;
+  ARTIST_RAIL_CELL_W = 18;
+  ARTIST_RAIL_H = 24;
   MAX_TIME = 30;
   MAX_MESSAGE = 3;
   MAX_TIME_MOUSE_SELECT = 800;
+
+procedure TScreenSong.RebuildArtistIndex;
+var I, Bucket, VisibleIndex: Integer;
+begin
+  for Bucket := 0 to ArtistBucketCount - 1 do ArtistTargets[Bucket] := -1;
+  VisibleIndex := 0;
+  for I := 0 to High(CatSongs.Song) do
+    if CatSongs.Song[I].Visible then
+    begin
+      Bucket := ArtistBucket(CatSongs.Song[I].ArtistNoAccent);
+      if ArtistTargets[Bucket] < 0 then ArtistTargets[Bucket] := VisibleIndex;
+      Inc(VisibleIndex);
+    end;
+end;
+
+function TScreenSong.ArtistScrollerVisible: Boolean;
+begin
+  Result := FreeListMode() and (TSortingType(Ini.Sorting) in [sArtist, sArtist2])
+    and (CatSongs.GetVisibleSongs() > 0) and not ScreenSongMenu.Visible;
+end;
+
+procedure TScreenSong.JumpArtistBucket(Bucket: Integer);
+begin
+  if (Bucket < 0) or (Bucket >= ArtistBucketCount) then Exit;
+  if (ArtistTargets[Bucket] < 0) or (ArtistTargets[Bucket] >= CatSongs.GetVisibleSongs()) then Exit;
+  if Round(SongTarget) <> ArtistTargets[Bucket] then SkipTo(ArtistTargets[Bucket], true);
+end;
+
+procedure TScreenSong.StepArtistBucket(Direction: Integer);
+var Current: Integer;
+begin
+  if not ArtistScrollerVisible then Exit;
+  if (Interaction < 0) or (Interaction > High(CatSongs.Song)) then Exit;
+  Current := ArtistBucket(CatSongs.Song[Interaction].ArtistNoAccent);
+  JumpArtistBucket(NextArtistBucket(ArtistTargets, Current, Direction));
+end;
+
+procedure TScreenSong.UpdateArtistScroller;
+var I, Current: Integer; ShowRail: Boolean;
+begin
+  ShowRail := ArtistScrollerVisible;
+
+  Current := -1;
+  if ShowRail and (Interaction >= 0) and (Interaction <= High(CatSongs.Song)) then
+    Current := ArtistBucket(CatSongs.Song[Interaction].ArtistNoAccent);
+  for I := 0 to ArtistBucketCount - 1 do
+  begin
+    Text[ArtistLetters[I]].Visible := ShowRail;
+    Text[ArtistLetters[I]].Alpha := 0.3;
+    if ArtistTargets[I] >= 0 then Text[ArtistLetters[I]].Alpha := 0.8;
+    if I = Current then Text[ArtistLetters[I]].Alpha := 1;
+    Text[ArtistLetters[I]].ColR := 1;
+    Text[ArtistLetters[I]].ColG := IfThen(I = Current, 0.8, 1);
+    Text[ArtistLetters[I]].ColB := IfThen(I = Current, 0.2, 1);
+  end;
+end;
+
+function TScreenSong.ArtistScrollerMouse(MouseButton: Integer; BtnDown: Boolean; X, Y: Integer): Boolean;
+begin
+  Result := ArtistScrollerVisible and (X >= ARTIST_RAIL_X)
+    and (X < ARTIST_RAIL_X + ArtistBucketCount * ARTIST_RAIL_CELL_W)
+    and (Y >= ARTIST_RAIL_Y) and (Y < ARTIST_RAIL_Y + ARTIST_RAIL_H);
+  if not Result then Exit;
+  if BtnDown then
+    case MouseButton of
+      SDL_BUTTON_LEFT: JumpArtistBucket((X - ARTIST_RAIL_X) div ARTIST_RAIL_CELL_W);
+      SDL_BUTTON_WHEELUP: StepArtistBucket(-1);
+      SDL_BUTTON_WHEELDOWN: StepArtistBucket(1);
+    end
+  else if (SDL_GetMouseState(nil, nil) and SDL_BUTTON_LMASK) <> 0 then
+    JumpArtistBucket((X - ARTIST_RAIL_X) div ARTIST_RAIL_CELL_W);
+end;
 
 // ***** Public methods ****** //
 function TScreenSong.FreeListMode: boolean;
@@ -302,6 +388,12 @@ begin
     end;
 
     SDL_ModState := SDL_GetModState and (KMOD_LSHIFT + KMOD_RSHIFT + KMOD_LCTRL + KMOD_RCTRL + KMOD_LALT  + KMOD_RALT);
+    // Artist-group paging adapted from USDX; keep ordinary page navigation.
+    if ((SDL_ModState and (KMOD_LALT or KMOD_RALT)) <> 0) and ArtistScrollerVisible then
+    begin
+      if PressedKey = SDLK_PAGEUP then begin StepArtistBucket(-1); Exit; end;
+      if PressedKey = SDLK_PAGEDOWN then begin StepArtistBucket(1); Exit; end;
+    end;
     //jump to artist or title letter
     if Self.FreeListMode() and ((SDL_ModState = KMOD_LCTRL) or (SDL_ModState = KMOD_LALT)) then
     begin
@@ -319,7 +411,7 @@ begin
               and UUnicodeUtils.UTF8StartsText(PressedKeyEncoded, IfThen(SDL_ModState = KMOD_LCTRL, Song.Title, Song.Artist))
             then
             begin
-              Self.SkipTo(I);
+              Self.SkipTo(CatSongs.FindVisibleIndex(I));
               Exit;
             end;
             Inc(I);
@@ -548,6 +640,7 @@ begin
   else if BtnDown then
   begin
     Self.TransferMouseCords(X, Y);
+    if ArtistScrollerMouse(MouseButton, BtnDown, X, Y) then Exit;
     case MouseButton of
       SDL_BUTTON_LEFT: //sing or move to the selected song/page
         begin
@@ -619,6 +712,7 @@ begin
   else if Self.FreeListMode() and (not UGraphic.ScreenSongMenu.Visible) then //hover cover
   begin
     Self.TransferMouseCords(X, Y);
+    if ArtistScrollerMouse(MouseButton, BtnDown, X, Y) then Exit;
     Self.Statics[Self.SearchIcon].Texture.Alpha := IfThen(
       (not Self.Text[Self.SearchTextPlaceholder].Visible) or Self.InRegion(X, Y, Self.Statics[Self.SearchIcon].GetMouseOverArea()),
       1,
@@ -664,6 +758,14 @@ begin
   Self.DefaultCover := UTexture.Texture.LoadTexture(USkins.Skin.GetTextureFileName('SongCover'));
 
   LoadFromTheme(Theme.Song);
+  for I := 0 to ArtistBucketCount - 1 do
+  begin
+    ArtistTargets[I] := -1;
+    ArtistLetters[I] := AddText(ARTIST_RAIL_X + I * ARTIST_RAIL_CELL_W + 12,
+      ARTIST_RAIL_Y, 0, 14, 1, 1, 1, Copy(ArtistAlphabet, I + 1, 1));
+    Text[ArtistLetters[I]].Align := 1;
+    Text[ArtistLetters[I]].Visible := false;
+  end;
 
   Self.TextArtist := Self.AddText(UThemes.Theme.Song.TextArtist);
   Self.TextCat := Self.AddText(UThemes.Theme.Song.TextCat);
@@ -1618,6 +1720,8 @@ begin
   for I := 0 to Length(Statics) - 1 do
     Statics[I].Draw;
 
+  UpdateArtistScroller;
+
   // and texts
   for I := 0 to Length(Text) - 1 do
     Text[I].Draw;
@@ -1854,6 +1958,7 @@ begin
     end;
     Self.SkipTo(0);
   end;
+  RebuildArtistIndex;
 end;
 
 { Set joker visibility }
@@ -2067,6 +2172,7 @@ begin
       USongs.CatSongs.SetFilter(Id, sfAll);
   end;
   Self.Text[Self.TextCat].Text := Caption;
+  RebuildArtistIndex;
   Self.SkipTo(Position, true);
 end;
 

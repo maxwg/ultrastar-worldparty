@@ -378,6 +378,16 @@ begin
 
     // check special keys
     case PressedKey of
+      SDLK_F6:
+      begin
+        Ini.NoteNames := 1 - Ini.NoteNames;
+        Ini.Save;
+      end;
+      SDLK_F7:
+      begin
+        Ini.DetectedPitch := 1 - Ini.DetectedPitch;
+        Ini.Save;
+      end;
       SDLK_ESCAPE,
       SDLK_BACKSPACE:
       begin

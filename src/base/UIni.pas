@@ -204,6 +204,8 @@ type
 
 	  Debug:          integer;
       Oscilloscope:   integer;
+      NoteNames:      integer;
+      DetectedPitch:  integer;
       AskBeforeDel:   integer;
       OnSongClick:    integer;
       LineBonus:      integer;
@@ -940,7 +942,7 @@ begin
   Self.FindUnsetMedley := ReadArrayIndex(Switch, IniFile, 'Game', 'FindUnsetMedley', 0);
 
   // Song Sorting
-  Sorting := ReadArrayIndex(ISorting, IniFile, 'Game', 'Sorting', Ord(sTitle));
+  Sorting := ReadArrayIndex(ISorting, IniFile, 'Game', 'Sorting', Ord(sArtist));
 
   // Show Score
   ShowScores := ReadArrayIndex(IShowScores, IniFile, 'Game', 'ShowScores', IGNORE_INDEX, 'On');
@@ -1057,6 +1059,8 @@ begin
   Debug := ReadArrayIndex(IDebug, IniFile, 'Advanced', 'Debug', 0);
 
     // Oscilloscope
+  NoteNames := ReadArrayIndex(IOscilloscope, IniFile, 'Advanced', 'NoteNames', 1);
+  DetectedPitch := ReadArrayIndex(IOscilloscope, IniFile, 'Advanced', 'DetectedPitch', 1);
   Oscilloscope := ReadArrayIndex(IOscilloscope, IniFile, 'Advanced', 'Oscilloscope', 0);
 
 
@@ -1276,6 +1280,8 @@ begin
   IniFile.WriteString('Advanced', 'Debug', IDebug[Debug]);
 
   // Oscilloscope
+  IniFile.WriteString('Advanced', 'NoteNames', IOscilloscope[NoteNames]);
+  IniFile.WriteString('Advanced', 'DetectedPitch', IOscilloscope[DetectedPitch]);
   IniFile.WriteString('Advanced', 'Oscilloscope', IOscilloscope[Oscilloscope]);
 
   //AskbeforeDel

@@ -75,7 +75,7 @@ begin
         end;
       SDLK_RETURN:
         begin
-          if SelInteraction = 6 then
+          if SelInteraction = ButtonExitIID then
           begin
             UIni.Ini.Save;
             AudioPlayback.PlaySound(SoundLib.Back);
@@ -88,7 +88,7 @@ begin
         InteractPrev;
       SDLK_RIGHT:
         begin
-          if (SelInteraction >= 0) and (SelInteraction <= 6) then
+          if (SelInteraction >= 0) and (SelInteraction < ButtonExitIID) then
           begin
             AudioPlayback.PlaySound(SoundLib.Option);
             InteractInc;
@@ -96,7 +96,7 @@ begin
         end;
       SDLK_LEFT:
         begin
-          if (SelInteraction >= 0) and (SelInteraction <= 6) then
+          if (SelInteraction >= 0) and (SelInteraction < ButtonExitIID) then
           begin
             AudioPlayback.PlaySound(SoundLib.Option);
             InteractDec;
@@ -107,19 +107,34 @@ begin
 end;
 
 constructor TScreenOptionsAdvanced.Create;
+var
+  Row: Integer;
+  Slide: TThemeSelectSlide;
+  procedure AddRow(Style: TThemeSelectSlide; var Value: Integer;
+    const Values: array of UTF8String);
+  begin
+    Style.Y := 90 + Row*42;
+    Style.H := 38;
+    AddSelectSlide(Style, Value, Values, 'OPTION_VALUE_');
+    Inc(Row);
+  end;
 begin
   inherited Create;
-
   LoadFromTheme(Theme.OptionsAdvanced);
-  AddSelectSlide(Theme.OptionsAdvanced.SelectDebug, UIni.Ini.Debug, UIni.IDebug, 'OPTION_VALUE_');
-  AddSelectSlide(Theme.OptionsAdvanced.SelectOscilloscope, UIni.Ini.Oscilloscope, UIni.IOscilloscope, 'OPTION_VALUE_');
-  AddSelectSlide(Theme.OptionsAdvanced.SelectOnSongClick, UIni.Ini.OnSongClick, UIni.IOnSongClick, 'OPTION_VALUE_');
-  AddSelectSlide(Theme.OptionsAdvanced.SelectAskbeforeDel, UIni.Ini.AskBeforeDel, UIni.IAskbeforeDel, 'OPTION_VALUE_');
-  AddSelectSlide(Theme.OptionsAdvanced.SelectPartyPopup, UIni.Ini.PartyPopup, UIni.IPartyPopup, 'OPTION_VALUE_');
-  AddSelectSlide(Theme.OptionsAdvanced.SelectTopScores, UIni.Ini.TopScores, UIni.ITopScores, 'OPTION_VALUE_');
-
+  Row := 0;
+  AddRow(Theme.OptionsAdvanced.SelectDebug, Ini.Debug, IDebug);
+  AddRow(Theme.OptionsAdvanced.SelectOscilloscope, Ini.Oscilloscope, IOscilloscope);
+  Slide := Theme.OptionsAdvanced.SelectOscilloscope;
+  Slide.Text := 'Target note names (F6)';
+  AddRow(Slide, Ini.NoteNames, IOscilloscope);
+  Slide.Text := 'Detected pitch (F7)';
+  AddRow(Slide, Ini.DetectedPitch, IOscilloscope);
+  AddRow(Theme.OptionsAdvanced.SelectOnSongClick, Ini.OnSongClick, IOnSongClick);
+  AddRow(Theme.OptionsAdvanced.SelectAskbeforeDel, Ini.AskBeforeDel, IAskbeforeDel);
+  AddRow(Theme.OptionsAdvanced.SelectPartyPopup, Ini.PartyPopup, IPartyPopup);
+  AddRow(Theme.OptionsAdvanced.SelectTopScores, Ini.TopScores, ITopScores);
   AddButton(Theme.OptionsAdvanced.ButtonExit);
-
+  ButtonExitIID := High(Interactions);
   Interaction := 0;
 end;
 
