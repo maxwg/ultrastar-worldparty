@@ -7,12 +7,12 @@ unchanged. It also fixes a reproduced Linux shutdown allocator crash.
 
 - [Artist navigation and USDX attribution](docs/artist-navigation.md)
 - [Pitch display and limitations](docs/pitch-display.md)
+- [Microphone setup and reconnect recovery](docs/microphone-recovery.md)
 - [Build and validation evidence](docs/validation/results.md)
 
 Linux compilation and synthetic-input UI checks pass. Windows and real-microphone
 validation are still pending. This is a source fork, not a packaged release.
 
-[![PayPal Donation](https://github.com/Daniel20Ultrastar-es/WorldParty-testing/blob/master/promo/Donate-Paypal.svg)](https://www.paypal.com/cgi-bin/webscr?item_name=Ultrastar+Espa%f1a+&cmd=_donations&currency_code=EUR&business=donaciones%40ultrastar-es.org)
 [![ultrastar-worldparty](https://snapcraft.io/ultrastar-worldparty/badge.svg)](https://snapcraft.io/ultrastar-worldparty)
 [![ultrastar-worldparty](https://snapcraft.io/ultrastar-worldparty/trending.svg?name=0)](https://snapcraft.io/ultrastar-worldparty)
 

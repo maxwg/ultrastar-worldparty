@@ -93,6 +93,7 @@ type
       procedure DrawVUMeter(const State: TDrawState; x, y, Width, Height: single);
       procedure DrawPitch(const State: TDrawState; x, y, Width, Height: single);
     public
+      ReturnToMain: boolean;
       constructor Create; override;
       function    Draw: boolean; override;
       function    ParseInput(PressedKey: cardinal; CharCode: UCS4Char; PressedDown: boolean): boolean; override;
@@ -147,7 +148,8 @@ begin
           begin
             Ini.Save;
             AudioPlayback.PlaySound(SoundLib.Back);
-            FadeTo(@ScreenOptions);
+            if ReturnToMain then FadeTo(@ScreenMain)
+            else FadeTo(@ScreenOptions);
           end;
         end;
       SDLK_RETURN:
@@ -158,7 +160,8 @@ begin
             begin
               Ini.Save;
               AudioPlayback.PlaySound(SoundLib.Back);
-              FadeTo(@ScreenOptions);
+              if ReturnToMain then FadeTo(@ScreenMain)
+              else FadeTo(@ScreenOptions);
             end;
           end;
         end;

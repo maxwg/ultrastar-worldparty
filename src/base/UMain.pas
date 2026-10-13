@@ -375,6 +375,12 @@ begin
   while (SDL_PollEvent(@Event) <> 0) do
   begin
     case Event.type_ of
+      SDL_AUDIODEVICEADDED, SDL_AUDIODEVICEREMOVED:
+      begin
+        if (Event.adevice.iscapture <> 0) and Assigned(AudioInput) then
+          AudioInput.HandleDeviceEvent(Event.adevice.which,
+            Event.type_ = SDL_AUDIODEVICEADDED);
+      end;
       SDL_QUITEV:
       begin
         Display.Fade := 0;

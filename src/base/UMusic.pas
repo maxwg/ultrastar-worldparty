@@ -552,6 +552,8 @@ type
       function InitializeRecord: boolean;
       function FinalizeRecord(): boolean;
 
+      procedure RefreshDevices;
+      procedure HandleDeviceEvent(DeviceID: Cardinal; Added: boolean);
       procedure CaptureStart;
       procedure CaptureStop;
   end;

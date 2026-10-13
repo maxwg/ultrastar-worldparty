@@ -130,8 +130,9 @@ begin
               end;
             6:
               begin
-                if not Assigned(UGraphic.ScreenOptionsMicrophones) then
-                  UGraphic.ScreenOptionsMicrophones := TScreenOptionsMicrophones.Create();
+                FreeAndNil(UGraphic.ScreenOptionsMicrophones);
+                AudioInput.RefreshDevices;
+                UGraphic.ScreenOptionsMicrophones := TScreenOptionsMicrophones.Create();
 
                 Screen := @UGraphic.ScreenOptionsMicrophones;
               end;

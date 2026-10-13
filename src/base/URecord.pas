@@ -181,6 +181,8 @@ type
       function InitializeRecord: boolean; virtual; abstract;
       function FinalizeRecord: boolean;   virtual;
 
+      procedure RefreshDevices;
+      procedure HandleDeviceEvent(DeviceID: Cardinal; Added: boolean); virtual;
       procedure CaptureStart;
       procedure CaptureStop;
   end;
@@ -360,8 +362,11 @@ begin
   LockAnalysisBuffer();
   try
 
-    if (Ini.DetectedPitch = 1) and (fLastCaptureTick <> 0) and
-       (Cardinal(SDL_GetTicks - fLastCaptureTick) < 250) then
+    // A disconnected microphone must not keep scoring its last captured note.
+    if (fLastCaptureTick = 0) or
+       (Cardinal(SDL_GetTicks - fLastCaptureTick) >= 250) then Exit;
+
+    if Ini.DetectedPitch = 1 then
       RawPitch := EstimatePitch(AnalysisBuffer, AudioFormat.SampleRate);
 
     // find maximum volume of first 1024 samples
@@ -786,6 +791,19 @@ begin
 end;
 
 { TAudioInputBase }
+
+procedure TAudioInputBase.RefreshDevices;
+begin
+  FinalizeRecord;
+  InitializeRecord;
+  AudioInputProcessor.UpdateInputDeviceConfig;
+end;
+
+procedure TAudioInputBase.HandleDeviceEvent(DeviceID: Cardinal; Added: boolean);
+begin
+  // Backends without hotplug notifications are rescanned from microphone setup.
+end;
+
 
 function TAudioInputBase.FinalizeRecord: boolean;
 var

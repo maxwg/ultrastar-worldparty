@@ -35,6 +35,7 @@ type
       function GetName: string; override;
       function InitializeRecord: boolean; override;
       function FinalizeRecord: boolean; override;
+      procedure HandleDeviceEvent(DeviceID: Cardinal; Added: boolean); override;
   end;
 
   TSDLInputDevice = class(TAudioInputDevice)
@@ -98,7 +99,7 @@ end;
 
 function TSDLInputDevice.Stop(): boolean;
 begin
-  SDL_CloseAudioDevice(DevID);
+  if DevID <> 0 then SDL_CloseAudioDevice(DevID);
   DevID := 0;
   Result := true;
 end;
@@ -208,7 +209,49 @@ begin
     Exit;
 
   Initialized := true;
-  Result := EnumDevices();
+  EnumDevices();
+  // Keep the initialized backend even when no microphone is connected yet.
+  Result := true;
+end;
+
+procedure TAudioInput_SDL.HandleDeviceEvent(DeviceID: Cardinal; Added: boolean);
+var
+  I, C, J: integer;
+  Device: TSDLInputDevice;
+  HasCapture, AmbiguousName: boolean;
+  AddedName: PChar;
+begin
+  AddedName := nil;
+  if Added then AddedName := SDL_GetAudioDeviceName(DeviceID, 1);
+  // Keep objects and channel mappings stable while the UI/game references them.
+  // A full device enumeration is performed only when opening setup.
+  for I := 0 to High(AudioInputProcessor.DeviceList) do
+  begin
+    Device := TSDLInputDevice(AudioInputProcessor.DeviceList[I]);
+    if not Added then
+    begin
+      if Device.DevID <> DeviceID then Continue;
+      Device.Stop;
+      for C := 0 to High(Device.CaptureChannel) do
+        if Assigned(Device.CaptureChannel[C]) then Device.CaptureChannel[C].Clear;
+      Log.LogStatus('Microphone disconnected: ' + Device.Name, 'SDL');
+    end
+    else if (Device.DevID = 0) and Device.UseName and
+            (AddedName <> nil) and (Device.Name = UTF8String(AddedName)) then
+    begin
+      // Only reopen the same explicitly named device; never substitute a default.
+      AmbiguousName := false;
+      for J := 0 to High(AudioInputProcessor.DeviceList) do
+        if (J <> I) and (AudioInputProcessor.DeviceList[J].Name = Device.Name) then
+          AmbiguousName := true;
+      if AmbiguousName then Continue;
+      HasCapture := false;
+      for C := 0 to High(Device.CaptureChannel) do
+        HasCapture := HasCapture or Assigned(Device.CaptureChannel[C]);
+      if HasCapture and Device.Start then
+        Log.LogStatus('Microphone reconnected: ' + Device.Name, 'SDL');
+    end;
+  end;
 end;
 
 function TAudioInput_SDL.FinalizeRecord: boolean;

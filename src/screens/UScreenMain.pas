@@ -73,6 +73,7 @@ uses
   UScreenPartyOptions,
   UScreenJukeboxPlaylist,
   UScreenOptions,
+  UScreenOptionsMicrophones,
   UScreenStatMain,
   UScreenAbout,
   UUnicodeUtils;
@@ -144,6 +145,14 @@ begin
             end;
             5: //exit
               Result := false;
+            7: //microphone setup
+            begin
+              FreeAndNil(UGraphic.ScreenOptionsMicrophones);
+              AudioInput.RefreshDevices;
+              UGraphic.ScreenOptionsMicrophones := TScreenOptionsMicrophones.Create();
+              UGraphic.ScreenOptionsMicrophones.ReturnToMain := true;
+              Screen := @UGraphic.ScreenOptionsMicrophones;
+            end;
             6: //about
             begin
               if not Assigned(UGraphic.ScreenAbout) then //load the screens only the first time
@@ -170,6 +179,9 @@ begin
 end;
 
 constructor TScreenMain.Create();
+var
+  MicButton: TThemeButton;
+  MicIndex: integer;
 begin
   inherited Create();
 {**
@@ -195,6 +207,22 @@ begin
   AddButton(Theme.Main.ButtonExit);
 
   AddButton(Theme.Main.ButtonAbout);
+  MicButton := Theme.Options.ButtonMicrophones;
+  MicButton.X := 165;
+  MicButton.Y := 510;
+  MicButton.W := 40;
+  MicButton.H := 48;
+  MicButton.SelectH := 40;
+  MicButton.Parent := 0;
+  MicButton.Reflection := false;
+  MicIndex := AddButton(MicButton);
+  if Length(Button[MicIndex].Text) > 0 then
+  begin
+    Button[MicIndex].Text[0].Text := 'Set up microphones';
+    Button[MicIndex].Text[0].X := 20;
+    Button[MicIndex].Text[0].Y := 55;
+    Button[MicIndex].Text[0].Size := 16;
+  end;
   Interaction := 0;
   Self.ReturnToSongScreenAfterLoadSongs := false;
 end;
@@ -244,6 +272,12 @@ end;
 procedure TScreenMain.SetInteraction(Num: integer);
 begin
   inherited SetInteraction(Num);
+  if Interaction = 7 then
+  begin
+    Text[TextDescription].Text := 'Set up microphones';
+    Text[TextDescriptionLong].Text := 'Choose a microphone, assign players and test your input.';
+    Exit;
+  end;
   Text[TextDescription].Text     := Theme.Main.Description[Interaction];
   Text[TextDescriptionLong].Text := Theme.Main.DescriptionLong[Interaction];
 end;
