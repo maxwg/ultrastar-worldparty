@@ -1,0 +1,4 @@
+# Preserve the independently reviewed bytes and retained fixture hashes on checkout.
+tools/song_catalog.py -text
+tools/owned_process.py -text
+tests/catalog/retained/** -text

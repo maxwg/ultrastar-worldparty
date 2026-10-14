@@ -1,0 +1,116 @@
+{
+  "schema_version": 1,
+  "purpose": "Provenance only; this is not a wire-protocol version or a recovered checkpoint.",
+  "new_integration_base": "db718a997da54fd5c2baa47e825d540127a6e0de",
+  "backend_sha256": {
+    "song_catalog.py": "7bf4c83e1f56d4f1f4ba4e4f026b5438e184be9eab05710d18b1c00b9d1f3211",
+    "owned_process.py": "9f6f62813541fa5f7e6a943e0be025727e76e697f0fa803930ee3fa702a91feb"
+  },
+  "retained_test_sources": [
+    {
+      "path": "fixture.py",
+      "bytes": 2811,
+      "sha256": "e74df004fe1d58ed2029c79feb56295202991e9a049e99ea44ab0cc6ad09bff3"
+    },
+    {
+      "path": "test_owned_process_repaired.py",
+      "bytes": 14633,
+      "sha256": "9e04c749bae3d30f0658fb98cb7169d4e611b95ef7b980a9524789802bdb941e"
+    },
+    {
+      "path": "before-repair-20261014/owned_process.py",
+      "bytes": 14002,
+      "sha256": "1a827d47b3498c3fe2d37812dbd06394fe10d3b720a13e54cfa8aa4c564dc2ba"
+    },
+    {
+      "path": "catalog-tests/install_runner.py",
+      "bytes": 2681,
+      "sha256": "3e260b7d34bb37260e827defdc5300877ba09ab91b51a7cf48f906fd6667b5df"
+    },
+    {
+      "path": "catalog-tests/boundary_runner.py",
+      "bytes": 550,
+      "sha256": "ca1f35e26e0c94d2510a83667808a9af3924e635bed0ce971ea0e95e8211c50d"
+    },
+    {
+      "path": "catalog-tests/native_fixture.c",
+      "bytes": 6757,
+      "sha256": "bf2511e5e7d7fb0c6ca4e4b36ac63ec1e48df15aed729bdc9988f36fd79f41fa"
+    },
+    {
+      "path": "catalog-tests/native_fixture_repair.c",
+      "bytes": 7223,
+      "sha256": "2d09ebef33120c53d8632cdf304d5524da652024e9b1409ad38a29bd2a0820f7"
+    },
+    {
+      "path": "catalog-tests/test_install_windows.py",
+      "bytes": 15225,
+      "sha256": "dc5372687dd480480d56796a0042eff5156c68db10fc0ca481b378f9df811b56"
+    },
+    {
+      "path": "catalog-tests/test_boundary_v2.py",
+      "bytes": 5021,
+      "sha256": "e9dc962cc73991e0ef0b794e7e81cdb9b14b3f743f576a2d1b7d7209236aa13b"
+    },
+    {
+      "path": "catalog-tests/test_repaired_install.py",
+      "bytes": 4261,
+      "sha256": "1873751517aa7d49bee9250f72baa9d66ff28e54a08a4c4230e3316c99e6e2a8"
+    },
+    {
+      "path": "capture-tests/capture_fixture.py",
+      "bytes": 1591,
+      "sha256": "cefd1e652abdb7c9425713083f54a36f70c2472d8aac1c9ed63812f1698a772a"
+    },
+    {
+      "path": "capture-tests/capture_worker.py",
+      "bytes": 6330,
+      "sha256": "cce5ec68650af6c9db8f2cdfaf4d3ea6f7a3eb29d1d072d49086f0b1ed396b41"
+    },
+    {
+      "path": "capture-tests/test_capture.py",
+      "bytes": 6729,
+      "sha256": "f800d08e2fb039f0f06932dbd5354f69935db6edd750651d78797119d80161db"
+    },
+    {
+      "path": "capture-tests/accounting-tests/accounting_worker.py",
+      "bytes": 11796,
+      "sha256": "7882f8734a5d2016c640f40bdd3236575e35a8123335bbd7cbe8be12bb54507a"
+    },
+    {
+      "path": "capture-tests/accounting-tests/burst_fixture.c",
+      "bytes": 1986,
+      "sha256": "a528bd81961aa5b851be82f54128d00e1d1f1bcad498c5760c65d06a906546e9"
+    },
+    {
+      "path": "capture-tests/accounting-tests/build_burst.cmd",
+      "bytes": 274,
+      "sha256": "e2b64023e9d6c6817323e6688f9766ebc1f70664b395f058de75cc8d5b2babd4"
+    },
+    {
+      "path": "capture-tests/accounting-tests/test_accounting.py",
+      "bytes": 5073,
+      "sha256": "a8da7c10e8c36f9560b6e4c0f307debcfa37a188ca514c6baca7c4e3f516e22d"
+    },
+    {
+      "path": "stage-tests/test_remove_stage_windows.py",
+      "bytes": 11135,
+      "sha256": "98246206a50055147b7ec27ddf4ead1bc6efed901683a7afac7d5ea32acf7dc4"
+    },
+    {
+      "path": "stage-tests/test_final_cancel_windows.py",
+      "bytes": 8403,
+      "sha256": "275fcf2e7fa5620d05deefd6fac6f626150710969586b4915f3fcb034050be21"
+    }
+  ],
+  "test_only_historical_helper": "retained/before-repair-20261014/owned_process.py is an independent outer test watchdog, never a runtime dependency.",
+  "excluded_execution": [
+    "The retained real 600-second timeout was verified against original owned_process.py SHA-256 3a6b4ad01a54d3f8519a299d8f8f46df8578b1116ca955296e2f52189a94c5ab. The corrected candidate owner has not repeated that full timeout; the bounded suite does not claim it.",
+    "Historical malformed non-PE startup-stall reproduction and superseded unbounded-probe defect reproduction are excluded by test_repaired_install.py."
+  ],
+  "reviewed_backend_sha256": {
+    "song_catalog.py": "7bf4c83e1f56d4f1f4ba4e4f026b5438e184be9eab05710d18b1c00b9d1f3211",
+    "owned_process.py": "3a6b4ad01a54d3f8519a299d8f8f46df8578b1116ca955296e2f52189a94c5ab"
+  },
+  "candidate_delta": "owned_process.py now uses DETACHED_PROCESS for explicit redirected stdio; exact lifetime checks are unchanged and errors include counts. This correction requires independent review. song_catalog.py and all19 retained tests remain byte-identical."
+}

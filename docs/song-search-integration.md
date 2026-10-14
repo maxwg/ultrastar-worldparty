@@ -34,3 +34,9 @@ Requirements before calling this complete:
 
 Prefer adapting the small backend boundary with attribution over embedding the
 terminal UI or adding a second independent song library/database.
+
+A new developer-only backend/test slice is described in
+[song-catalog-backend.md](song-catalog-backend.md). It records exact provenance,
+a narrow owner correction and offline reproduction; it does not enable this in-game flow or
+recover the lost checkpoint. Its current raw protocol still needs independent
+review before a Pascal bridge.
