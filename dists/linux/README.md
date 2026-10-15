@@ -14,12 +14,14 @@ tools and libraries required by `configure`:
 make
 ```
 
-The configure check rejects Free Pascal versions below 3.0.0 and declares no upper
-version bound. The build also requires a C compiler, `pkg-config`,
-and the SDL2, SDL2_image, FreeType, SQLite, Lua (5.1 or newer), and FFmpeg
-(libavcodec, libavformat, libavutil) development packages. The Makefile base FPC
-flags default to `-Si -Sg -Sc -v0Binwe`; release flags default to `-Xs -O4`.
-See `src/Makefile.in` for the debug and release flag definitions.
+The configure check rejects Free Pascal versions below 3.0.0 and declares no
+upper version bound. Required build dependencies include a C compiler,
+`pkg-config`, SDL2, SDL2_image, FreeType, SQLite, and Lua (5.1 or newer)
+development packages. `configure.ac` also requires FFmpeg's `libavformat` and
+`libavutil` packages, probes `libavcodec` conditionally, and checks detected
+FFmpeg versions against its compatibility table. The Makefile base FPC flags
+default to `-Si -Sg -Sc -v0Binwe`; release flags default to `-Xs -O4`. See
+`src/Makefile.in` for the debug and release flag definitions.
 
 The repository-root `install` helper is named `install`, without a `.sh`
 suffix. It is a Debian/Ubuntu convenience script that uses `sudo apt-get`, runs

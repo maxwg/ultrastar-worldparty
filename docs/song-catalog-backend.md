@@ -1,11 +1,13 @@
-# New catalog backend slice for independent review
+# Experimental catalog backend and review notes
 
-This is a new experimental backend/test integration against commit
-`db718a997da54fd5c2baa47e825d540127a6e0de`. It is not recovery of the lost checkpoint.
-The current developer-only follow-up adds a small Pascal metadata-search UI and
-owned child-process bridge. It is not installed or packaged; without an explicit
-absolute interpreter and adapter pair the UI reports setup unavailable and
-starts no child. No live catalog request was made during its tests.
+This document records a source-only backend and test integration against commit
+`db718a997da54fd5c2baa47e825d540127a6e0de`, plus later developer-only follow-ups.
+The receipts and manifests below describe their named candidates; they are not a
+release validation report for the current tree. The current UI follow-up adds a
+small Pascal metadata-search screen and owned child-process bridge. It is not
+installed or packaged; without an explicit absolute interpreter and adapter
+pair the UI reports setup unavailable and starts no child. No live catalog
+request was made during its tests.
 
 ## Location and provenance
 
@@ -25,8 +27,8 @@ the small UI/bridge described above. Both remain source-only and unbundled. Its 
 recorded as the previously reviewed source. The historical retained manifest
 and past receipts remain unchanged; `tests/catalog/current-candidate-manifest.json`
 separately pins the current candidate and offline contract-test source.
-The owner has a narrow follow-up correction: detached launch avoids creation of
-a hidden console-host Job member, and rejection messages include raw counts.
+A later correction makes detached launch avoid creation of a hidden
+console-host Job member and includes raw counts in rejection messages.
 The lifetime-accounting predicate and cleanup rules are unchanged, and the
 historical retained test sources remain byte-identical.
 Narrow `.gitattributes` rules disable newline conversion for these
@@ -56,8 +58,8 @@ treat a loose copy of `song_catalog.py` as a supported packaged entry point.
 - Runtime adapter uses Python 3 standard library only. The source uses
   `Path.unlink(missing_ok=True)`, which implies a source-derived API floor of
   Python 3.8; this is not a tested support claim. The bridge/inert-child and
-  layout/input tests ran with CPython 3.12.14 x64 and FPC 3.2.2 x64 in this
-  cloud environment. Windows `PIPE_NOWAIT` behavior on `TProcess` anonymous
+  layout/input tests were reported with CPython 3.12.14 x64 and
+  FPC 3.2.2 x64. Windows `PIPE_NOWAIT` behavior on `TProcess` anonymous
   input pipes has not been executed; if setting that mode fails at startup, the
   bridge fails closed rather than using blocking writes.
   The retained Windows suite previously verified CPython 3.13.3 x64 for its
@@ -244,8 +246,8 @@ because the capability exists. Before packaging or adding downloads, still:
    initializes BASS recording devices; the Linux SDL shim does not isolate it.
    `-songpath` is additive, and `-configfile` alone does not isolate all user data.
 
-Root owns the next integration decision and all publication. This patch does not
-claim a complete in-game search/download workflow.
+Further integration and any publication require a separate review. This
+source-only work does not claim a complete in-game search/download workflow.
 
 ## Historical Windows result: corrected pre-protocol candidate
 
@@ -339,6 +341,6 @@ test checks Win32 error values 232, 997, and 536, while a static check confirms
 the Windows branch uses the named constants and avoids a Pascal set expression;
 the actual Windows pipe behavior has not run. Full Linux compile/link succeeded with FPC
 3.2.2, and geometry/input helpers verify bounded, non-overlapping single-line
-text from 320x240 through 1920x1080. No GUI runtime/screenshot test was
-available in this cloud environment. Transport, process lifecycle, and UI
+text from 320x240 through 1920x1080. No interactive GUI runtime or screenshot
+test was recorded for this candidate. Transport, process lifecycle, and UI
 helpers are covered by offline deterministic tests in `tests/catalog_bridge/`.

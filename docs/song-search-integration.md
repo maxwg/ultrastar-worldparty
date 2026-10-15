@@ -1,4 +1,4 @@
-# In-game song discovery: inspected integration boundary
+# Experimental song-search integration
 
 Reference inspected: martiinii/ultrastar-cli at
 85e549cca96c578e02e235db9a13e609d82fcb95 (MIT).
@@ -85,6 +85,7 @@ ran CPython 3.12.14 x64 and Free Pascal 3.2.2 x64, including a clean full-app
 compile/link with no missing shared libraries. Layout tests check all 15 text
 rectangles for bounds and pairwise non-overlap at 320x240 through 1920x1080;
 dynamic status/input/result rows are single-line, UTF-8 truncated for display,
-without changing result metadata. No interactive GUI runtime/screenshot test
-was available in this cloud environment. `Path.unlink(missing_ok=True)` suggests a source API floor
-of 3.8, but Python 3.8 compatibility has not been executed or claimed.
+without changing result metadata. No interactive GUI runtime or screenshot
+test was recorded for this source-only candidate. `Path.unlink(missing_ok=True)`
+suggests Python 3.8 as a source API floor, but Python 3.8 compatibility has not
+been executed or claimed.

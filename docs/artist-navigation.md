@@ -23,9 +23,10 @@ jump to convert a global song index to a visible index before SkipTo, as USDX do
 This prevents jumping outside the filtered subset. No wholesale merge was used:
 the forks have different UI and song-selection contracts. GPL notices are retained.
 
-Standalone production-helper test:
+Standalone production-helper test (from the repository root):
 
-    fpc -Fu./src/base -FU./build/tests -FE./build/tests tests/artist_navigation_test.pas
+    mkdir -p build/tests
+    fpc -B -Fu./src/base -FU./build/tests -FE./build/tests tests/artist_navigation_test.pas
     ./build/tests/artist_navigation_test
 
 Full build and interactive verification results are recorded separately. Passing
