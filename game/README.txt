@@ -1,40 +1,30 @@
-UltraStar WorldParty comes under license GPL 3.0
+UltraStar WorldParty
+===================
 
+Project
+-------
 
+Project repository:
+https://github.com/ultrastares/ultrastar-worldparty/
 
-Due to huge amount of changes, we focus all documentation at our repository.
+In a source checkout, see ../README.md and ../CONTRIBUTING.md in the
+repository root for project status, development notes, and source-build
+instructions.
 
-
-
----------------------------------------------------
-
-https://github.com/ultrastares/ultrastar-worldparty
-
----------------------------------------------------
-
-
-
-You'll find there all the resources with the development.
-
-
-
-Feel free to send us your enhances too ;-)
-
-
-
-Also, you can get support about this game in our official website:
-
-
-
-------------------------
-
+Support:
 https://ultrastar-es.org
 
-------------------------
+License and notices
+-------------------
 
+UltraStar WorldParty is licensed under the GNU General Public License, version 3.
+See ../LICENSE in the source tree for the license text. Bundled third-party
+components may have separate terms; see licenses/ for their notices. Any
+distribution must include the applicable license text and notices.
 
+Attribution
+-----------
 
-
-Have fun,
-
-UltraStar España Team.
+The original game-directory note was signed by the UltraStar España Team.
+For copyright and fork-history context in a source checkout, see
+../COPYRIGHT.txt.

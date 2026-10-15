@@ -1,6 +1,29 @@
-Included in SVN ..
----------------------------------------------------------------------------
+Historical dependency and build notes
+======================================
 
+This file preserves older WorldParty dependency notes. It is not the current
+setup checklist for this checkout.
+
+Current source build
+--------------------
+
+For current source-build prerequisites and commands, see
+../../CONTRIBUTING.md. The package checks are defined in ../../configure.ac.
+That configure script requires Free Pascal 3.0 or newer, a C compiler, and
+pkg-config. It checks SDL2, SDL2_image, FreeType, SQLite, and Lua 5.1 or newer
+as required packages. It requires pkg-config metadata for libavformat and
+libavutil, probes libavcodec conditionally, and checks detected FFmpeg versions
+against its compatibility table. FFmpeg support is enabled only when all three
+libav packages are available.
+
+The repository's ../../autogen.sh runs autoreconf. Install the Autotools needed
+by autoreconf when regenerating the configure script.
+
+Earlier component references
+----------------------------
+
+The older notes listed these Pascal bindings, wrappers, and related projects.
+The links are retained as historical references, not as a current install list.
 
 Jedi-sdl
   http://sourceforge.net/projects/jedi-sdl
@@ -13,39 +36,39 @@ BASS.pas
 
 BASS_FX.pas
   http://www.un4seen.com/download.php?z/0/bass_fx24
-  
+
 ffmpeg
   http://www.iversenit.dk/dev/ffmpeg-headers/
 
 SQLLite Wrapper
   http://www.itwriting.com/sqlitesimple.php
 
-======================================
-LINUX build
-======================================
-On top of the above pas files, you will need development libraries for them.
+Historical Linux notes (not current)
+------------------------------------
 
-here are the instructions needed to compile on ubunty ( 7.04 )
+The following package instructions refer to Ubuntu 7.04 and Fedora 8. They
+are kept for historical context and do not describe the current build
+requirements.
 
-		sudo apt-get install libavcodec-dev libavformat-dev libsqlite3-dev libsdl-ttf2.0-dev libsdl-image1.2-dev
+Ubuntu 7.04:
 
-in order to build the configure file ( with autogen.sh )
+    sudo apt-get install libavcodec-dev libavformat-dev libsqlite3-dev libsdl-ttf2.0-dev libsdl-image1.2-dev
 
-		sudo apt-get install automake autoconf
+To generate the configure files with autogen.sh, the old notes also requested:
 
+    sudo apt-get install automake autoconf
 
-for Fedora 8 ( contributed by kdub )
+Fedora 8 (contributed by kdub):
 
-		yum install ffmpeg-devel SDL_ttf-devel SDL_image-devel sqlite-devel
+    yum install ffmpeg-devel SDL_ttf-devel SDL_image-devel sqlite-devel
 
-======================================
-Mac OS X build
-======================================
-You need the Developer tools from Apple, Xcode and fink, the open source software package manager.
+Historical Mac OS X notes (not current)
+---------------------------------------
 
-Install the FreePascal compiler (version 2.2.2 or later) using fink or a package.
+These notes referred to Apple's Developer Tools, Xcode, and Fink. They listed
+Free Pascal 2.2.2 or later and the following Fink packages:
 
-Install these libs and their dependences using fink:
+    fink install pkgconfig libavcodec-dev libavformat-dev libavutil-dev libswscale-dev
+    fink install SDL SDL-image libpng3 sqlite3-dev
 
-		fink install pkgconfig libavcodec-dev libavformat-dev libavutil-dev libswscale-dev
-		fink install SDL SDL-image libpng3 sqlite3-dev
+The FPC minimum above predates the current configure.ac requirement of 3.0.0.
