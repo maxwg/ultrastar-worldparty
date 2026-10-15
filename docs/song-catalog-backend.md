@@ -2,8 +2,10 @@
 
 This is a new experimental backend/test integration against commit
 `db718a997da54fd5c2baa47e825d540127a6e0de`. It is not recovery of the lost checkpoint.
-There is no Pascal bridge, menu entry, app launch, or installation/package change.
-The game cannot invoke these tools through this patch.
+The current developer-only follow-up adds a small Pascal metadata-search UI and
+owned child-process bridge. It is not installed or packaged; without an explicit
+absolute interpreter and adapter pair the UI reports setup unavailable and
+starts no child. No live catalog request was made during its tests.
 
 ## Location and provenance
 
@@ -15,9 +17,10 @@ directory. The two smallest sibling runtime files are placed there:
 - `tools/owned_process.py`, SHA-256
   `9f6f62813541fa5f7e6a943e0be025727e76e697f0fa803930ee3fa702a91feb`
 
-The catalog backend now has a protocol-v1 follow-up for independent review,
+The catalog backend has a protocol-v1 follow-up for independent review,
 covering status, capabilities, process-local authentication state, request
-correlation, and stable error codes. It is source-only and adds no UI bridge. Its prior backend hash,
+correlation, and stable error codes. A separate developer-only follow-up adds
+the small UI/bridge described above. Both remain source-only and unbundled. Its prior backend hash,
 `7bf4c83e1f56d4f1f4ba4e4f026b5438e184be9eab05710d18b1c00b9d1f3211`, remains
 recorded as the previously reviewed source. The historical retained manifest
 and past receipts remain unchanged; `tests/catalog/current-candidate-manifest.json`
@@ -42,14 +45,24 @@ account storage or separate song database is added.
 ## Dependency and packaging contract
 
 This slice is developer source only. Existing game installers/build targets do
-not copy it, and no target is added here. A future package must explicitly
-include both Python files together and provide a reviewed bridge and runtime
-configuration. Do not treat a loose copy of `song_catalog.py` as a usable game
-feature or a supported application entry point.
+not copy it, and no target is added here. The game bridge is enabled only by the
+paired `-catalog-python <absolute executable>` and
+`-catalog-adapter <absolute script>` command-line settings. They are validated
+before launch; partial, missing, relative or nonexistent paths leave the
+feature unavailable. The game passes no `--enable-downloads` argument, does
+not search PATH or CWD, and does not install or download any runtime. Do not
+treat a loose copy of `song_catalog.py` as a supported packaged entry point.
 
-- Python 3 standard library only; native tests verify CPython 3.13.3 x64.
-  A lower minimum supported runtime has not been established. The new test
-  runner uses `hashlib.file_digest` and therefore requires Python 3.11 or newer.
+- Runtime adapter uses Python 3 standard library only. The source uses
+  `Path.unlink(missing_ok=True)`, which implies a source-derived API floor of
+  Python 3.8; this is not a tested support claim. The bridge/inert-child and
+  layout/input tests ran with CPython 3.12.14 x64 and FPC 3.2.2 x64 in this
+  cloud environment. Windows `PIPE_NOWAIT` behavior on `TProcess` anonymous
+  input pipes has not been executed; if setting that mode fails at startup, the
+  bridge fails closed rather than using blocking writes.
+  The retained Windows suite previously verified CPython 3.13.3 x64 for its
+  candidate. The new catalog test runner uses `hashlib.file_digest` and
+  therefore requires Python 3.11 or newer.
 - Windows process ownership requires Windows 10+ Job APIs. No breakaway or
   compatibility fallback is provided. Existing enclosing Job restrictions can
   cause a closed failure.
@@ -68,9 +81,9 @@ feature or a supported application entry point.
 ## Current raw protocol and limitations
 
 The raw Python CLI implements JSON-lines protocol version 1 while continuing to
-accept legacy unversioned requests for existing tool callers. It still has no
-game bridge or package entry point. Do not wire or launch it from the game before
-independent review of the bridge and remaining limits below.
+accept legacy unversioned requests for existing tool callers. The current
+developer-only game bridge uses v1. It is unbundled and defaults to unavailable;
+the remaining limits below still apply before any release or download flow.
 
 A v1 request includes `"protocol_version": 1` and a per-request `request_id` of
 1–64 ASCII letters, digits, or `. _ : -` characters. The new `status` operation
@@ -88,6 +101,22 @@ Example request and initial status response:
 {"protocol_version":1,"request_id":"status-1","op":"status"}
 {"type":"status","protocol_version":1,"request_id":"status-1","auth_state":"signed_out","setup_state":"login_required","session_scope":"process_memory_only","busy":false,"capabilities":{"login":true,"search":true,"details":true,"download":false}}
 ```
+
+The game bridge requires both explicit absolute runtime paths and validates
+them before launch; no environment, `PATH`, or current-directory search is
+performed. The search screen keeps the local rescan action in the same menu.
+Its UI exposes metadata search and explicit sign-in only, and always starts the
+adapter without `--enable-downloads`. The client rejects malformed types,
+frames over 65,536 bytes, mismatched protocol versions, and any enabled download
+capability. Each operation has one request ID; quit uses its own ID. A null
+quit target is accepted if the active operation completed before the helper
+read quit. Any correlated v1 error is terminal, including `busy`; an
+`authentication_required` response or helper exit clears signed-in state.
+Status/login/search requests have local deadlines, and timed-out work is
+terminated. Outbound JSONL is held in a 65,536-byte queue and written through a
+nonblocking pipe. On hide the client queues quit and immediately terminates
+only its helper, so the UI does not claim that a quit acknowledgement arrived.
+The current adapter status/login/search paths do not start subprocesses.
 
 Every response event for an accepted, structurally valid v1 request, including
 results, progress, operation errors, and `idle`, carries the same
@@ -192,13 +221,13 @@ runner does not repeat it. Historical
 malformed non-PE startup-stall and superseded unbounded-probe reproduction cases
 remain excluded exactly as specified by `test_repaired_install.py`.
 
-## Required review before a Pascal bridge
+## Required review before distribution or download actions
 
-Protocol v1 now provides status/capabilities, process-local auth/setup state,
+Protocol v1 provides status/capabilities, process-local auth/setup state,
 request correlation, stable error codes, and a default-off download capability.
-The bridge must send a request ID per v1 request, treat `download_disabled` as
-terminal, and never enable downloads merely because the capability exists.
-Before a Pascal bridge or game launch, still:
+The developer bridge sends new request IDs for every operation including quit,
+treats `download_disabled` as terminal, and never enables downloads merely
+because the capability exists. Before packaging or adding downloads, still:
 
 1. Bound stream framing before reading a whole line. The current 16,384-character
    check happens after the line has already been read; it is not a memory bound.
@@ -281,3 +310,35 @@ runner under the `contract` selection and make no network request. The current
 candidate manifest records the offline result and explicitly says its native
 Windows suites have not been run. `git diff --check` is clean; the historical
 retained manifest, fixtures, and earlier Windows receipts remain unchanged.
+
+## Developer-only game UI/transport follow-up
+
+The additional game bridge and screen are pinned independently in
+`tests/catalog_bridge/current-candidate-manifest.json`; this overlay is based on
+the reviewed UI/audio checkpoint and does not rewrite historical backend or
+retained Windows receipts. The in-game screen supports metadata search and
+explicit sign-in only; it is disabled unless both absolute runtime paths are
+configured, does not save account data, and never enables downloads. Local
+rescan stays in the same menu. The helper lives for one screen session; hide
+queues a separately correlated quit and immediately kills the exact helper PID.
+It does not wait for the quit acknowledgement or a network operation to finish.
+The client accepts login as verified only when the response has boolean
+`ok: true` and `auth_state: "signed_in"`; missing, wrong-typed, or contradictory
+fields fail closed.
+
+The Linux helper transport uses a 64-KiB nonblocking write queue with scoped
+SIGPIPE handling. A transport-owned monitor starts before launching the child
+and is the only `waitpid` owner; it reaps that exact PID even if the screen is
+hidden and no longer polling. Its short lock serializes nonblocking waitpid
+and the hide-path exact-PID kill, so the PID cannot be reused between reap and
+termination; the lock is never held across a blocking wait. The regression test
+checks `kill(pid, 0)` is ESRCH without calling session `Poll` or `Running`, while
+a separate sentinel child stays alive. Windows requests `PIPE_NOWAIT` for the
+anonymous pipe and fails closed if unsupported. A portable compiled expression
+test checks Win32 error values 232, 997, and 536, while a static check confirms
+the Windows branch uses the named constants and avoids a Pascal set expression;
+the actual Windows pipe behavior has not run. Full Linux compile/link succeeded with FPC
+3.2.2, and geometry/input helpers verify bounded, non-overlapping single-line
+text from 320x240 through 1920x1080. No GUI runtime/screenshot test was
+available in this cloud environment. Transport, process lifecycle, and UI
+helpers are covered by offline deterministic tests in `tests/catalog_bridge/`.

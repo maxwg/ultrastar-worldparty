@@ -102,6 +102,7 @@ uses
   UPlaylist,
   USong,
   USongs,
+  UScreenSongCatalog,
   UUnicodeUtils;
 
 function TScreenSongMenu.ParseInput(PressedKey: cardinal; CharCode: UCS4Char; PressedDown: boolean): boolean;
@@ -671,10 +672,25 @@ begin
 
         Button[0].Text[0].Text := Language.Translate('SONG_MENU_PLAY');
       end;
-	  SM_Search_new_songs:
-	    begin
-        Self.FadeTo(@UGraphic.ScreenMain);
-        UGraphic.ScreenMain.ReloadSongs();
+    SM_Search_new_songs:
+      begin
+        CurMenu := sMenu;
+        Text[0].Text := Language.Translate('SONG_CATALOG_MENU');
+        Button[0].Visible := true;
+        Button[1].Visible := true;
+        Button[2].Visible := true;
+        Button[3].Visible := false;
+        Button[4].Visible := false;
+        Button[5].Visible := false;
+        Button[0].Text[0].Text := Language.Translate('SONG_CATALOG_RESCAN');
+        Button[1].Text[0].Text := Language.Translate('SONG_CATALOG_ONLINE');
+        Button[2].Text[0].Text := Language.Translate('C_BACK');
+        Button[0].Selectable := true;
+        Button[1].Selectable := true;
+        Button[2].Selectable := true;
+        SelectsS[0].Visible := false;
+        SelectsS[1].Visible := false;
+        SelectsS[2].Visible := false;
       end;
   end;
 end;
@@ -698,6 +714,25 @@ begin
               MenuShow(SM_Playlist_Load);
           8: // button 6
               MenuShow(SM_Medley);
+        end;
+      end;
+
+    SM_Search_new_songs:
+      begin
+        case Interaction of
+          0:
+            begin
+              Self.FadeTo(@UGraphic.ScreenMain);
+              UGraphic.ScreenMain.ReloadSongs();
+            end;
+          1:
+            begin
+              if not Assigned(UGraphic.ScreenSongCatalog) then
+                UGraphic.ScreenSongCatalog := TScreenSongCatalog.Create();
+              MenuShow(SM_Main);
+              FadeTo(@UGraphic.ScreenSongCatalog);
+            end;
+          2: MenuShow(SM_Main);
         end;
       end;
 

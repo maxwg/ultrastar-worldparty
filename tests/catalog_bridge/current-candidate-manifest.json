@@ -1,0 +1,125 @@
+{
+  "schema_version": 1,
+  "candidate": "UltraStar developer-only metadata catalog UI/bridge follow-up",
+  "created_utc": "2026-10-15",
+  "base_checkpoint_commit": "21782d611fb5c5f3e8cac95f27f51bf25d5f67df",
+  "base_checkpoint_tree": "fcdc15e1a7173d170937ebcb559f9347269dd7ec",
+  "scope": "Source-only; separate overlay; downloads disabled; no live login/catalog/network tests; no credentials persisted.",
+  "files": [
+    {
+      "path": "docs/song-catalog-backend.md",
+      "bytes": 21363,
+      "sha256": "da4585457dd51e103ee6a71feb13438bbd1688d8cfa062f95a4e59ed4ea1df55"
+    },
+    {
+      "path": "docs/song-search-integration.md",
+      "bytes": 6009,
+      "sha256": "c2f14a723280dc02bbc413b384651e96fa5b5695d02789568daf0698af6c0352"
+    },
+    {
+      "path": "game/languages/English.ini",
+      "bytes": 19790,
+      "sha256": "67b58262a18af6dda773e04cf04c2fa2468e03c4e716e5c8e96d4b6b1815f770"
+    },
+    {
+      "path": "game/languages/Language.new",
+      "bytes": 23520,
+      "sha256": "12090769160f9460efca8adbfb7b0d79110b2ce7876b3119705f19eba45d6e7d"
+    },
+    {
+      "path": "src/base/UCommandLine.pas",
+      "bytes": 8908,
+      "sha256": "c00642fd6d983e0f04f282d8e858f50a7fb2f689d771f2f378e8edc1956f6591"
+    },
+    {
+      "path": "src/base/UGraphic.pas",
+      "bytes": 23361,
+      "sha256": "f48ad6e0366465a1313d6c80c8a94e58ce343ce08e86e478cf17969c7dafb7e2"
+    },
+    {
+      "path": "src/screens/UScreenSongMenu.pas",
+      "bytes": 30284,
+      "sha256": "3c55b9123810811ce969854b18d9ae225289f48e31a1f79d22da5d46974ae39b"
+    },
+    {
+      "path": "src/base/USongCatalogBridge.pas",
+      "bytes": 31599,
+      "sha256": "f0507cace0aa210b1b0db57ec38a32013bef31e9369caf1a69c601d0cec0f28e"
+    },
+    {
+      "path": "src/base/USongCatalogInput.pas",
+      "bytes": 1037,
+      "sha256": "19945907074d25185957b3439550fe5038ad7174e59ee8fa62ec9111c599a5cb"
+    },
+    {
+      "path": "src/base/USongCatalogLayout.pas",
+      "bytes": 3059,
+      "sha256": "fe430b9ca9f641dbcbb46418732e6b6ad076853333805584e82cd258befca236"
+    },
+    {
+      "path": "src/screens/UScreenSongCatalog.pas",
+      "bytes": 8377,
+      "sha256": "ddc116128a85639365ddc1965e3600a071c1b517d11656ee4408d772ee15eb6f"
+    },
+    {
+      "path": "tests/catalog_bridge/catalog_bridge_test.pas",
+      "bytes": 28695,
+      "sha256": "9679476b33435827b21a3424e059dfabb3510f59d458a4301c21ddaf6a959ade"
+    },
+    {
+      "path": "tests/catalog_bridge/catalog_pipe_error_expression_test.pas",
+      "bytes": 1061,
+      "sha256": "23a99145002beba0ae30f5c408813db74cedd575a6122c39f5dc6bfb731f24f6"
+    },
+    {
+      "path": "tests/catalog_bridge/catalog_ui_helpers_test.pas",
+      "bytes": 3180,
+      "sha256": "8eed15b35e6bb7551927485aa4f06fc87acafe79d14b94315ec22c92de62d4d8"
+    },
+    {
+      "path": "tests/catalog_bridge/check_windows_paths.py",
+      "bytes": 788,
+      "sha256": "34d0a1a18ef1a20968079c5a3d6058bbff9bcc4b3feace3a3000971b4021f9bc"
+    },
+    {
+      "path": "tests/catalog_bridge/closed_stdin_child.py",
+      "bytes": 539,
+      "sha256": "33f03698750c212e231912a81b15c8eafcbdf43225c44df64d0b5a71c816d42b"
+    },
+    {
+      "path": "tests/catalog_bridge/inert_child.py",
+      "bytes": 1051,
+      "sha256": "1d5d3887853f1f07375e1ad57aacb435da6ec1ba336e481919d6f6c628ca0835"
+    },
+    {
+      "path": "tests/catalog_bridge/nonreader_child.py",
+      "bytes": 214,
+      "sha256": "ba19b49829647006d0c7c047a7c2500cf4a93b50270643a2f4d1aa7dc4712887"
+    },
+    {
+      "path": "tests/catalog_bridge/run.sh",
+      "bytes": 1978,
+      "sha256": "10bf294d1870c555cc27cff4eddaae688867da3462c13059b2b65cb893cc217d"
+    }
+  ],
+  "offline_validation": {
+    "bridge_test": "PASS: 111 catalog bridge assertions",
+    "layout_input_test": "PASS: layout bounds/non-overlap at 320x240, 640x480, 800x600, 1280x720, 1920x1080; UTF-8 input/truncation helpers",
+    "windows_path_check": "PASS: Windows path literals and named pipe-error branch statically checked; Windows compiler/runtime unavailable",
+    "transport_tests": "injected fake transport; real inert child; actual inert adapter status+quit; nonreader/full queue hide deadline; closed-stdin EPIPE/SIGPIPE containment; hidden-child reaped without further Poll; unrelated sentinel preserved",
+    "test_python": "CPython 3.12.14 x64",
+    "test_fpc": "Free Pascal 3.2.2 x86_64-linux",
+    "full_app_build": {
+      "result": "PASS: clean -B full application compile/link; 310 fresh object/PPU artifacts; ldd reported no missing dependencies",
+      "executable_sha256": "d790ac41d3dd20a9aa42bca96f393b58575e8bdd93593888169206d2f24579fb",
+      "output": "/workspace/scratch/e2d0e15cda22/ultrastar-local/build/catalog_bridge_final_ui9/bin/WorldParty"
+    },
+    "limitations": [
+      "No interactive GUI runtime/screenshot verification in this cloud environment",
+      "Windows PIPE_NOWAIT anonymous-pipe support and Windows runtime not executed",
+      "Python 3.8 is only a source-derived minimum, not tested"
+    ],
+    "login_response_contract": "Missing ok, wrong-type ok, false/signed-in, and true/signed-out responses all fail closed; consistent ok:true/signed-in succeeds.",
+    "portable_windows_error_test": "PASS: FPC compiled explicit equality/or regression with ERROR_NO_DATA 232, ERROR_IO_PENDING 997, and ERROR_PIPE_LISTENING 536; all values tested"
+  }
+}

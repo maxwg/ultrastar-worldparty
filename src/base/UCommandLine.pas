@@ -68,6 +68,8 @@ type
       SongPath:   IPath;
       ConfigFile: IPath;
       ScoreFile:  IPath;
+      CatalogPython: string;
+      CatalogAdapter: string;
 
       // pseudo integer values
       property Language:      integer read GetLanguage;
@@ -124,6 +126,8 @@ begin
   writeln('  ----------------------------------------------------------');
   writeln('  '+ Fmt(cMediaInterfaces) +' : Show in-use media interfaces');
   writeln('  '+ Fmt(cDebug) +' : Display Debugging info');
+  writeln('  '+ Fmt('catalog-python') +' : Optional absolute Python executable for catalog search');
+  writeln('  '+ Fmt('catalog-adapter') +' : Optional absolute catalog adapter script; required with catalog-python');
   writeln;
 
   platform.halt;
@@ -150,6 +154,8 @@ begin
   SongPath    := PATH_NONE;
   ConfigFile  := PATH_NONE;
   ScoreFile   := PATH_NONE;
+  CatalogPython := '';
+  CatalogAdapter := '';
 end;
 
 {**
@@ -279,6 +285,18 @@ begin
           // write value to string
           ScoreFile := Path(ParamStr(I + 1));
         end;
+      end
+
+      else if (Command = 'catalog-python') then
+      begin
+        if (PCount > I) then
+          CatalogPython := ParamStr(I + 1);
+      end
+
+      else if (Command = 'catalog-adapter') then
+      begin
+        if (PCount > I) then
+          CatalogAdapter := ParamStr(I + 1);
       end;
 
     end;
