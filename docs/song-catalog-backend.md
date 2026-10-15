@@ -202,7 +202,7 @@ contract-test hashes, verifies `retained-manifest.json` and the unchanged retain
 fixtures, copies the exact sources into a fresh directory, compiles three inert C
 fixtures, and runs:
 
-- current parser/protocol fixtures (32 tests; no network);
+- current parser/protocol fixtures (36 tests; no network);
 - deterministic launch-accounting regression (3 stdout modes);
 - native process ownership (10 tests);
 - repaired installer fast suite (18 tests, including actual 15-second probe timeout);
@@ -299,13 +299,13 @@ logical tests/cases across its full run and subsequent installer-only validation
 not a claim of a new single all-suite run. The original failures, first corrected
 failures and later passing results must be reviewed together. No real downloader,
 game, microphone or account was used. They do not validate the later protocol-v1
-candidate, whose 30-test contract suite has only been run offline in Linux; its
-candidate manifest explicitly records that the native Windows suites remain
-unrun.
+candidate. Its retained 36-test contract evidence comes from offline Linux runs.
+This does not establish native Windows qualification; the candidate manifest
+records that those suites remain unrun for this candidate.
 Interactive-console compatibility, real downloader behavior, the changed
 owner's full 600-second timeout and the Pascal/UI contract remain unvalidated.
 
-The offline parser/protocol contract suite now has 32 tests, including v1 status,
+The offline parser/protocol contract suite now has 36 tests, including v1 status,
 control acknowledgements, session-expiry invalidation, request correlation,
 stable error codes, and disabled-download cases. They are included in the Windows
 runner under the `contract` selection and make no network request. The current
