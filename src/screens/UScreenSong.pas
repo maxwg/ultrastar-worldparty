@@ -53,6 +53,7 @@ type
       function ArtistScrollerVisible: Boolean;
       procedure JumpArtistBucket(Bucket: Integer);
       procedure StepArtistBucket(Direction: Integer);
+      function FindArtistSearchTarget(const Prefix: UTF8String; CurrentIndex: Integer): Integer;
       procedure UpdateArtistScroller;
       function ArtistScrollerMouse(MouseButton: Integer; BtnDown: Boolean; X, Y: Integer): Boolean;
     private
@@ -278,6 +279,26 @@ begin
     and (CatSongs.GetVisibleSongs() > 0) and not ScreenSongMenu.Visible;
 end;
 
+function TScreenSong.FindArtistSearchTarget(const Prefix: UTF8String; CurrentIndex: Integer): Integer;
+var
+  I, GlobalIndex: Integer;
+  Entries: TArtistSearchEntries;
+begin
+  Result := -1;
+  if (Prefix = '') or (CatSongs.GetVisibleSongs() = 0) then Exit;
+  SetLength(Entries, Length(CatSongs.Song));
+  for I := 0 to High(CatSongs.Song) do
+  begin
+    Entries[I].Artist := CatSongs.Song[I].Artist;
+    // Category headers are visible in the root list, but are not artists.
+    Entries[I].Visible := CatSongs.Song[I].Visible;
+    Entries[I].IsCategory := CatSongs.Song[I].Main;
+  end;
+  GlobalIndex := FindArtistPrefixTarget(Entries, CurrentIndex, Prefix);
+  if GlobalIndex >= 0 then
+    Result := CatSongs.FindVisibleIndex(GlobalIndex);
+end;
+
 procedure TScreenSong.JumpArtistBucket(Bucket: Integer);
 begin
   if (Bucket < 0) or (Bucket >= ArtistBucketCount) then Exit;
@@ -359,6 +380,10 @@ var
   I: integer;
   I2: integer;
   SDL_ModState: word;
+  SearchInputState: TSearchInputState;
+  SearchInputTransition: TSearchInputTransition;
+  CurrentGlobalIndex: Integer;
+  ArtistSearchTarget: Integer;
   PressedKeyEncoded: UTF8String;
   Song: USong.TSong;
 begin
@@ -373,21 +398,46 @@ begin
 
   if (PressedDown) then
   begin // Key Down
+    SDL_ModState := SDL_GetModState and (KMOD_LSHIFT or KMOD_RSHIFT or KMOD_LCTRL or KMOD_RCTRL
+      or KMOD_LALT or KMOD_RALT or KMOD_GUI or KMOD_MODE);
+    // Typing opens and focuses search. The first character jumps to an artist;
+    // subsequent characters use the existing local title/artist filter.
     if
       Self.FreeListMode()
-      and (not Self.Text[Self.SearchTextPlaceholder].Visible)
-      and UUnicodeUtils.IsPrintableChar(CharCode)
+      and IsSearchTextCharacter(CharCode,
+        (SDL_ModState and (KMOD_CTRL or KMOD_ALT or KMOD_GUI)) <> 0,
+        (SDL_ModState and KMOD_MODE) <> 0)
     then
     begin
-      if Length(Self.Text[Self.SearchText].Text) < 25 then
+      SearchInputState.Active := not Self.Text[Self.SearchTextPlaceholder].Visible;
+      SearchInputState.Text := Self.Text[Self.SearchText].Text;
+      SearchInputTransition := UpdateSearchInput(SearchInputState, sieCharacter, CharCode,
+        CatSongs.GetVisibleSongs() <> 0);
+      if SearchInputTransition.Action <> siaIgnored then
       begin
-        Self.Text[Self.SearchText].Text := Self.Text[Self.SearchText].Text+UUnicodeUtils.UCS4ToUTF8String(CharCode);
-        Self.SetSubselection(Self.Text[Self.SearchText].Text);
+        if not SearchInputState.Active then
+          Self.EnableSearch(true);
+        if not Self.Text[Self.SearchTextPlaceholder].Visible then
+        begin
+          Self.Text[Self.SearchText].Text := SearchInputTransition.State.Text;
+          if SearchInputTransition.Action = siaJumpArtist then
+          begin
+            // Interaction is already a global song index when a filter is active.
+            CurrentGlobalIndex := Self.Interaction;
+            ArtistSearchTarget := Self.FindArtistSearchTarget(SearchInputTransition.State.Text, CurrentGlobalIndex);
+            if ArtistSearchTarget >= 0 then
+              Self.SkipTo(ArtistSearchTarget, true)
+            else
+              Self.SetSubselection(SearchInputTransition.State.Text);
+          end
+          else
+            Self.SetSubselection(SearchInputTransition.State.Text);
+          Self.Text[Self.SearchText].Selected := true;
+        end;
       end;
       Exit;
     end;
 
-    SDL_ModState := SDL_GetModState and (KMOD_LSHIFT + KMOD_RSHIFT + KMOD_LCTRL + KMOD_RCTRL + KMOD_LALT  + KMOD_RALT);
     // Artist-group paging adapted from USDX; keep ordinary page navigation.
     if ((SDL_ModState and (KMOD_LALT or KMOD_RALT)) <> 0) and ArtistScrollerVisible then
     begin
@@ -426,15 +476,48 @@ begin
         begin
           if not Self.Text[Self.SearchTextPlaceholder].Visible then
           begin
-            Self.Text[Self.SearchText].DeleteLastLetter();
-            Self.SetSubselection(Self.Text[Self.SearchText].Text);
+            SearchInputState.Active := true;
+            SearchInputState.Text := Self.Text[Self.SearchText].Text;
+            // Interaction is already a global song index when a filter is active.
+            CurrentGlobalIndex := Self.Interaction;
+            SearchInputTransition := UpdateSearchInput(SearchInputState, sieBackspace, 0);
+            if SearchInputTransition.Action <> siaIgnored then
+            begin
+              Self.Text[Self.SearchText].Text := SearchInputTransition.State.Text;
+              case SearchInputTransition.Action of
+                siaClear:
+                  Self.SetSubselection();
+                siaJumpArtist:
+                  begin
+                    // Leaving a multi-character filter restores the full list
+                    // before the one-character artist jump is recomputed.
+                    Self.SetSubselection();
+                    ArtistSearchTarget := Self.FindArtistSearchTarget(SearchInputTransition.State.Text, CurrentGlobalIndex);
+                    if ArtistSearchTarget >= 0 then
+                      Self.SkipTo(ArtistSearchTarget, true)
+                    else
+                      Self.SetSubselection(SearchInputTransition.State.Text);
+                  end;
+                siaFilter:
+                  Self.SetSubselection(SearchInputTransition.State.Text);
+              end;
+            end;
             Exit;
           end;
           Self.ParseInput(SDLK_ESCAPE, 0, true);
         end;
       SDLK_ESCAPE:
         if Self.FreeListMode() and (not Self.Text[Self.SearchTextPlaceholder].Visible) then
-          Self.ParseInput(SDLK_F3, 0, true)
+        begin
+          SearchInputState.Active := true;
+          SearchInputState.Text := Self.Text[Self.SearchText].Text;
+          SearchInputTransition := UpdateSearchInput(SearchInputState, sieEscape, 0);
+          if SearchInputTransition.Action = siaClose then
+          begin
+            Self.Text[Self.SearchText].Text := SearchInputTransition.State.Text;
+            Self.EnableSearch(false);
+          end;
+        end
         else
         begin
           Self.CloseMessage();
@@ -576,8 +659,19 @@ begin
         end;
       SDLK_F3: //show search
         begin
-          Self.Text[Self.SearchText].Text := ''; //needed on hide
-          Self.EnableSearch(Self.Text[Self.SearchTextPlaceholder].Visible);
+          SearchInputState.Active := not Self.Text[Self.SearchTextPlaceholder].Visible;
+          SearchInputState.Text := Self.Text[Self.SearchText].Text;
+          SearchInputTransition := UpdateSearchInput(SearchInputState, sieToggle, 0,
+            CatSongs.GetVisibleSongs() <> 0);
+          Self.Text[Self.SearchText].Text := SearchInputTransition.State.Text;
+          if SearchInputTransition.Action = siaOpen then
+            Self.EnableSearch(true)
+          else if SearchInputTransition.Action = siaClose then
+            Self.EnableSearch(false)
+          else
+            // Keep the old no-visible-songs behavior: EnableSearch will leave
+            // the field closed and reset the list when there is nothing to show.
+            Self.EnableSearch(true);
         end;
       SDLK_F4: //random song
         if Self.FreeListMode() and (not SlowChessboardScroll()) then
@@ -1902,11 +1996,13 @@ begin
   begin
     Self.Text[Self.SearchTextPlaceholder].Visible := false;
     Self.Statics[Self.SearchIcon].Texture.Alpha := 1;
+    Self.Text[Self.SearchText].Selected := true;
   end
   else
   begin
     Self.Text[Self.SearchTextPlaceholder].Visible := true;
     Self.Statics[Self.SearchIcon].Texture.Alpha := UThemes.Theme.Song.SearchIcon.Alpha;
+    Self.Text[Self.SearchText].Selected := false;
     Self.SetSubselection();
   end
 end;

@@ -283,10 +283,16 @@ begin
   if assigned(LogBuffer) then
     LogBuffer.Clear;
   LockAnalysisBuffer();
-  fLastCaptureTick := 0;
-  FillChar(RawPitch, SizeOf(RawPitch), 0);
-  FillChar(AnalysisBuffer[0], Length(AnalysisBuffer) * SizeOf(SmallInt), 0);
-  UnlockAnalysisBuffer();
+  try
+    fLastCaptureTick := 0;
+    FillChar(RawPitch, SizeOf(RawPitch), 0);
+    ToneValid := false;
+    Tone := -1;
+    ToneAbs := -1;
+    FillChar(AnalysisBuffer[0], Length(AnalysisBuffer) * SizeOf(SmallInt), 0);
+  finally
+    UnlockAnalysisBuffer();
+  end;
 end;
 
 procedure TCaptureBuffer.ProcessNewBuffer(Buffer: PByteArray; BufferSize: integer);
@@ -831,7 +837,6 @@ begin
   if (Started) then
     CaptureStop();
 
-  // reset buffers
   for S := 0 to High(AudioInputProcessor.Sound) do
     AudioInputProcessor.Sound[S].Clear;
 

@@ -57,6 +57,7 @@ type
       // current input device
       CurrentDeviceIndex: integer;
       PreviewDeviceIndex: integer;
+      VisibleDeviceIndices: array of integer;
 
       // string arrays for select-slide options
       InputSourceNames: array of UTF8String;
@@ -130,6 +131,7 @@ uses
   UFiles,
   UDisplay,
   UIni,
+  UAudioInputFilter,
   UUnicodeUtils,
   ULog;
 
@@ -217,6 +219,10 @@ var
   InputDevice: TAudioInputDevice;
   InputDeviceCfg: PInputDeviceConfig;
   ChannelTheme: ^TThemeSelectSlide;
+  DeviceNames: TAudioInputDeviceNames;
+  ActivelyMappedNames: TAudioInputDeviceNames;
+  ConfigIndex: integer;
+  IsMapped: boolean;
   //ButtonTheme: TThemeButton;
   WidgetYPos: integer;
 begin
@@ -224,8 +230,32 @@ begin
 
   LoadFromTheme(Theme.OptionsMicrophones);
 
+  SetLength(DeviceNames, Length(AudioInputProcessor.DeviceList));
+  for DeviceIndex := 0 to High(AudioInputProcessor.DeviceList) do
+    DeviceNames[DeviceIndex] := Trim(AudioInputProcessor.DeviceList[DeviceIndex].Name);
+
+  SetLength(ActivelyMappedNames, 0);
+  for ConfigIndex := 0 to High(Ini.InputDeviceConfig) do
+  begin
+    IsMapped := false;
+    for ChannelIndex := 0 to High(Ini.InputDeviceConfig[ConfigIndex].ChannelToPlayerMap) do
+      if Ini.InputDeviceConfig[ConfigIndex].ChannelToPlayerMap[ChannelIndex] <> CHANNEL_OFF then
+      begin
+        IsMapped := true;
+        Break;
+      end;
+    if IsMapped then
+    begin
+      SetLength(ActivelyMappedNames, Length(ActivelyMappedNames) + 1);
+      ActivelyMappedNames[High(ActivelyMappedNames)] :=
+        Trim(Ini.InputDeviceConfig[ConfigIndex].Name);
+    end;
+  end;
+  VisibleDeviceIndices := FilterVisibleAudioInputDevices(DeviceNames,
+    ActivelyMappedNames, Ini.ShowVirtualAudioInputs = 1);
+
   // set CurrentDeviceIndex to a valid device
-  if (Length(AudioInputProcessor.DeviceList) > 0) then
+  if (Length(VisibleDeviceIndices) > 0) then
     CurrentDeviceIndex := 0
   else
     CurrentDeviceIndex := -1;
@@ -235,16 +265,18 @@ begin
   WidgetYPos := 0;
 
   // init sliders if at least one device was detected
-  if (Length(AudioInputProcessor.DeviceList) > 0) then
+  if (Length(VisibleDeviceIndices) > 0) then
   begin
-    InputDevice := AudioInputProcessor.DeviceList[CurrentDeviceIndex];
+    InputDevice := AudioInputProcessor.DeviceList[
+      VisibleDeviceIndices[CurrentDeviceIndex]];
     InputDeviceCfg := @Ini.InputDeviceConfig[InputDevice.CfgIndex];
 
     // init device-selection slider
-    SetLength(InputDeviceNames, Length(AudioInputProcessor.DeviceList));
-    for DeviceIndex := 0 to High(AudioInputProcessor.DeviceList) do
+    SetLength(InputDeviceNames, Length(VisibleDeviceIndices));
+    for DeviceIndex := 0 to High(VisibleDeviceIndices) do
     begin
-      InputDeviceNames[DeviceIndex] := AudioInputProcessor.DeviceList[DeviceIndex].Name;
+      InputDeviceNames[DeviceIndex] := AudioInputProcessor.DeviceList[
+        VisibleDeviceIndices[DeviceIndex]].Name;
     end;
     // add device-selection slider (InteractionID: 0)
     AddSelectSlide(Theme.OptionsMicrophones.SelectSlideCard, CurrentDeviceIndex, InputDeviceNames);
@@ -266,10 +298,10 @@ begin
 
     // find max. channel count of all devices
     MaxChannelCount := 0;
-    for DeviceIndex := 0 to High(AudioInputProcessor.DeviceList) do
+    for DeviceIndex := 0 to High(VisibleDeviceIndices) do
     begin
-      if (AudioInputProcessor.DeviceList[DeviceIndex].AudioFormat.Channels > MaxChannelCount) then
-        MaxChannelCount := AudioInputProcessor.DeviceList[DeviceIndex].AudioFormat.Channels;
+      if (AudioInputProcessor.DeviceList[VisibleDeviceIndices[DeviceIndex]].AudioFormat.Channels > MaxChannelCount) then
+        MaxChannelCount := AudioInputProcessor.DeviceList[VisibleDeviceIndices[DeviceIndex]].AudioFormat.Channels;
     end;
 
     // init channel-to-player mapping sliders
@@ -320,7 +352,7 @@ begin
   // add Exit-button
   AddButton(Theme.OptionsMicrophones.ButtonExit);
   // store InteractionID
-  if (Length(AudioInputProcessor.DeviceList) > 0) then
+  if (Length(VisibleDeviceIndices) > 0) then
     ExitButtonIID := MaxChannelCount + 4
   else
     ExitButtonIID := 2;
@@ -341,13 +373,14 @@ begin
   StopPreview();
 
   // set CurrentDeviceIndex to a valid device
-  if (CurrentDeviceIndex > High(AudioInputProcessor.DeviceList)) then
+  if (CurrentDeviceIndex > High(VisibleDeviceIndices)) then
     CurrentDeviceIndex := 0;
 
   // update sliders if at least one device was detected
-  if (Length(AudioInputProcessor.DeviceList) > 0) then
+  if (Length(VisibleDeviceIndices) > 0) then
   begin
-    InputDevice := AudioInputProcessor.DeviceList[CurrentDeviceIndex];
+    InputDevice := AudioInputProcessor.DeviceList[
+      VisibleDeviceIndices[CurrentDeviceIndex]];
     InputDeviceCfg := @Ini.InputDeviceConfig[InputDevice.CfgIndex];
 
     // update source-selection slider
@@ -396,12 +429,13 @@ var
 begin
   // validate CurrentDeviceIndex
   if ((CurrentDeviceIndex < 0) or
-      (CurrentDeviceIndex > High(AudioInputProcessor.DeviceList))) then
+      (CurrentDeviceIndex > High(VisibleDeviceIndices))) then
   begin
     Exit;
   end;
 
-  InputDevice := AudioInputProcessor.DeviceList[CurrentDeviceIndex];
+  InputDevice := AudioInputProcessor.DeviceList[
+    VisibleDeviceIndices[CurrentDeviceIndex]];
   if not assigned(InputDevice) then
     Exit;
 
@@ -454,9 +488,10 @@ var
   Device: TAudioInputDevice;
 begin
   if ((CurrentDeviceIndex >= 0) and
-      (CurrentDeviceIndex <= High(AudioInputProcessor.DeviceList))) then
+      (CurrentDeviceIndex <= High(VisibleDeviceIndices))) then
   begin
-    Device := AudioInputProcessor.DeviceList[CurrentDeviceIndex];
+    Device := AudioInputProcessor.DeviceList[
+      VisibleDeviceIndices[CurrentDeviceIndex]];
     // set preview channel as active capture channel
     for ChannelIndex := 0 to High(Device.CaptureChannel) do
     begin
@@ -465,7 +500,7 @@ begin
       FillChar(ChannelPeak[ChannelIndex], SizeOf(TPeakInfo), 0);
     end;
     Device.Start();
-    PreviewDeviceIndex := CurrentDeviceIndex;
+    PreviewDeviceIndex := VisibleDeviceIndices[CurrentDeviceIndex];
 
     // volume must be polled again
     NextVolumePollTime := 0;

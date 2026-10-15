@@ -47,6 +47,7 @@ procedure SingDrawBeatDelimeters(Left, Top, Right: real; NrLines: integer);
 procedure SingDrawLine(Left, Top, Right: real; NrLines, PlayerNumber: integer; Space: integer);
 procedure SingDrawPlayerLine(X, Y, W: real; NrLines, PlayerIndex: integer; Space: integer);
 procedure SingDrawPlayerBGLine(Left, Top, Right: real; NrLines, PlayerIndex: integer; Space: integer);
+procedure ResetPitchTraces;
 
 // TimeBar
 procedure SingDrawTimeBar();
@@ -133,6 +134,12 @@ var
   PitchTraces: array[0..IMaxPlayerCount-1] of TPitchTrace;
   PitchPanels: array[0..IMaxPlayerCount-1] of TPitchPanel;
   PitchPanelCount: Integer;
+
+procedure ResetPitchTraces;
+begin
+  FillChar(PitchTraces, SizeOf(PitchTraces), 0);
+  PitchPanelCount := 0;
+end;
 
 { Draw after every player's target/scoring bars, so overlays stay on top. }
 procedure DrawPitchOverlays;
@@ -235,15 +242,17 @@ begin
               glEnd;
             end;
           end;
-        if not Estimate.Valid then Continue;
-        Cents := Round((Estimate.Midi-Round(Estimate.Midi))*100);
-        LabelText := PitchName(Round(Estimate.Midi)) + ' ' +
-          FormatFloat('0.0', Estimate.Hz) + ' Hz ' + IntToStr(Cents) + 'c';
-        if PY < MinY then LabelText := LabelText + ' (above range)';
-        if PY > MaxY then LabelText := LabelText + ' (below range)';
-        glColor4f(0.8, 0.95, 1, 0.75);
-        SetFontPos(X+W+10*ScreenX-glTextWidth(LabelText), MaxY+3);
-        glPrint(LabelText);
+        if (Ini.PitchReadout = 1) and Estimate.Valid then
+        begin
+          Cents := Round((Estimate.Midi-Round(Estimate.Midi))*100);
+          LabelText := PitchName(Round(Estimate.Midi)) + ' ' +
+            FormatFloat('0.0', Estimate.Hz) + ' Hz ' + IntToStr(Cents) + 'c';
+          if PY < MinY then LabelText := LabelText + ' (above range)';
+          if PY > MaxY then LabelText := LabelText + ' (below range)';
+          glColor4f(0.8, 0.95, 1, 0.75);
+          SetFontPos(X+W+10*ScreenX-glTextWidth(LabelText), MaxY+3);
+          glPrint(LabelText);
+        end;
       end;
     end;
   end;

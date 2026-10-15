@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "purpose": "Current source and offline-test identity only; does not inherit native Windows validation from the historical retained manifest or receipts.",
+  "base_commit": "d4c1c145e64c2d399b77d8603b0ff722249a844a",
+  "wire_protocol_version": 1,
+  "backend_sha256": {
+    "song_catalog.py": "d73d2eba7fb23bb77ae29ca6107ddc5362c1588fd5fd952217a019ea18d157d6",
+    "owned_process.py": "9f6f62813541fa5f7e6a943e0be025727e76e697f0fa803930ee3fa702a91feb"
+  },
+  "test_contract_sha256": "298e783bfac3809d2f3fcff922e988ca769a9b93a1d5528a5c70fb65dec026ae",
+  "retained_manifest_sha256": "1b2b4c0de65e8412b62d93b4cbe66686fd84b3429f130244e6fbcf957fa78b8b",
+  "verification": {
+    "offline_contract": {
+      "status": "passed",
+      "test_count": 36,
+      "command": "python3 -I -S -B tests/catalog/test_contract.py --backend tools",
+      "network": "No catalog request; socket connect audit hook denies network in the tests.",
+      "repeated_runs": 10
+    },
+    "native_windows_suites": {
+      "status": "not_run_for_this_candidate",
+      "note": "Earlier Windows receipts describe the historical pre-protocol candidate only."
+    }
+  },
+  "created_utc": "2026-10-15T01:11:45Z"
+}

@@ -206,6 +206,8 @@ type
       Oscilloscope:   integer;
       NoteNames:      integer;
       DetectedPitch:  integer;
+      PitchReadout:   integer;
+      ShowVirtualAudioInputs: integer;
       AskBeforeDel:   integer;
       OnSongClick:    integer;
       LineBonus:      integer;
@@ -1061,6 +1063,8 @@ begin
     // Oscilloscope
   NoteNames := ReadArrayIndex(IOscilloscope, IniFile, 'Advanced', 'NoteNames', 1);
   DetectedPitch := ReadArrayIndex(IOscilloscope, IniFile, 'Advanced', 'DetectedPitch', 1);
+  PitchReadout := ReadArrayIndex(IOscilloscope, IniFile, 'Advanced', 'PitchReadout', 0);
+  ShowVirtualAudioInputs := ReadArrayIndex(IOscilloscope, IniFile, 'Advanced', 'ShowVirtualAudioInputs', 0);
   Oscilloscope := ReadArrayIndex(IOscilloscope, IniFile, 'Advanced', 'Oscilloscope', 0);
 
 
@@ -1282,6 +1286,8 @@ begin
   // Oscilloscope
   IniFile.WriteString('Advanced', 'NoteNames', IOscilloscope[NoteNames]);
   IniFile.WriteString('Advanced', 'DetectedPitch', IOscilloscope[DetectedPitch]);
+  IniFile.WriteString('Advanced', 'PitchReadout', IOscilloscope[PitchReadout]);
+  IniFile.WriteString('Advanced', 'ShowVirtualAudioInputs', IOscilloscope[ShowVirtualAudioInputs]);
   IniFile.WriteString('Advanced', 'Oscilloscope', IOscilloscope[Oscilloscope]);
 
   //AskbeforeDel

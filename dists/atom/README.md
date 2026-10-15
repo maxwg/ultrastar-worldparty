@@ -1,19 +1,30 @@
-UltraStar WorldParty with Atom (by Github)
-=================================================
+# Atom build workflow (legacy)
 
-To compile UltraStar WorldParty using Atom editor developed by Github (https://atom.io) you must install in it at least this two packages:
-- Pascal language support in Atom (language-pascal https://atom.io/packages/language-pascal) to syntax highlighting.
-- Atom Build package (atom-build https://github.com/noseglid/atom-build) to compile (and optionally execute) the project.
+This repository includes Atom Build wrappers, but this is a legacy editor
+workflow. It requires Free Pascal and the development dependencies required by
+the project; the wrappers do not install them.
 
-You must also have installed Free Pascal in your system (https://www.freepascal.org). In Debian/Ubuntu you can do it using `sudo apt install fp-compiler-3.2.0`.
+On Debian/Ubuntu, the repository-root helper is `./install`, not `./install.sh`.
+It runs `sudo apt-get`, then configure/build/install commands, and copies a
+desktop file into `/usr/share/applications`. Review those system-wide effects
+before running it. If you only need compiler dependencies, install the
+appropriate development packages for your distribution separately.
 
-And finally, if you are in Debian/Ubuntu, you must execute './install.sh' to get the dependencies, compile and add a shorcut to execute the game. On other systems you must do the same manually.
+Copy the matching configuration file from the repository root, then restart
+Atom:
 
-After install all things you must copy, depend of your system, the .atom-build.json file to the root project path. Restart Atom and now you can press:
-- F9 to compile
-- Ctrl+F9 to compile in debug mode
-- F10 to compile and execute the game
-- Ctrl+F10 to compile in debug mode and execute the game
-- Ctrl+F11 to only execute without compile
+- Linux: copy `dists/atom/linux/.atom-build.json` to `.atom-build.json`.
+- Windows: copy `dists/atom/windows/.atom-build.json` to `.atom-build.json`.
 
-If all works fine the executable will appear in game folder and link.res file will be copied to res folder.
+The checked-in key mappings are:
+
+- F9: compile debug build.
+- Ctrl+F9: compile regular build.
+- F10: compile and execute debug build.
+- Ctrl+F10: compile and execute regular build.
+- F11: execute debug build without compiling.
+- Ctrl+F11: execute regular build without compiling.
+
+These mappings come from the checked-in Atom Build configuration. The wrapper
+scripts call FPC directly; their build commands and flags are in
+`dists/atom/linux/compile.sh` and `dists/atom/windows/compile.bat`.

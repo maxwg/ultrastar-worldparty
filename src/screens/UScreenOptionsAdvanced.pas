@@ -37,7 +37,8 @@ uses
   UMusic,
   UFiles,
   UIni,
-  UThemes;
+  UThemes,
+  UAdvancedOptionsLayout;
 
 type
 
@@ -110,11 +111,12 @@ constructor TScreenOptionsAdvanced.Create;
 var
   Row: Integer;
   Slide: TThemeSelectSlide;
+  ExitButton: TThemeButton;
   procedure AddRow(Style: TThemeSelectSlide; var Value: Integer;
     const Values: array of UTF8String);
   begin
-    Style.Y := 90 + Row*42;
-    Style.H := 38;
+    Style.Y := AdvancedOptionsRowTop(Row);
+    Style.H := AdvancedOptionsRowHeight;
     AddSelectSlide(Style, Value, Values, 'OPTION_VALUE_');
     Inc(Row);
   end;
@@ -129,11 +131,17 @@ begin
   AddRow(Slide, Ini.NoteNames, IOscilloscope);
   Slide.Text := 'Detected pitch (F7)';
   AddRow(Slide, Ini.DetectedPitch, IOscilloscope);
+  Slide.Text := 'Current pitch readout (F8)';
+  AddRow(Slide, Ini.PitchReadout, IOscilloscope);
+  Slide.Text := 'Show virtual audio inputs';
+  AddRow(Slide, Ini.ShowVirtualAudioInputs, IOscilloscope);
   AddRow(Theme.OptionsAdvanced.SelectOnSongClick, Ini.OnSongClick, IOnSongClick);
   AddRow(Theme.OptionsAdvanced.SelectAskbeforeDel, Ini.AskBeforeDel, IAskbeforeDel);
   AddRow(Theme.OptionsAdvanced.SelectPartyPopup, Ini.PartyPopup, IPartyPopup);
   AddRow(Theme.OptionsAdvanced.SelectTopScores, Ini.TopScores, ITopScores);
-  AddButton(Theme.OptionsAdvanced.ButtonExit);
+  ExitButton := Theme.OptionsAdvanced.ButtonExit;
+  ExitButton.Y := AdvancedOptionsExitTop(Row, ExitButton.H, ExitButton.Y);
+  AddButton(ExitButton);
   ButtonExitIID := High(Interactions);
   Interaction := 0;
 end;

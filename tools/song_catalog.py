@@ -26,6 +26,9 @@ import urllib.request
 ORIGIN = 'https://usdb.animux.de'
 MAX_RESPONSE = 4 * 1024 * 1024
 OUTPUT_LOCK = threading.Lock()
+PROTOCOL_VERSION = 1
+MAX_REQUEST_ID = 64
+REQUEST_ID_PATTERN = re.compile(r'[A-Za-z0-9._:-]{1,64}\Z')
 
 
 def emit(kind, **data):
@@ -33,12 +36,130 @@ def emit(kind, **data):
         print(json.dumps({'type': kind, **data}, ensure_ascii=True), flush=True)
 
 
+class ProtocolError(Exception):
+    def __init__(self, code, message, context=None, **extra):
+        super().__init__(message)
+        self.code = code
+        self.context = context or {}
+        self.extra = extra
+
+
+class AuthenticationRequiredError(ValueError):
+    pass
+
+
+class DownloadControl:
+    """Cancellation state with an atomic, explicit publication boundary."""
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._cancelled = threading.Event()
+        self._publication_started = False
+
+    def clear(self):
+        with self._lock:
+            self._publication_started = False
+            self._cancelled.clear()
+
+    def is_set(self):
+        return self._cancelled.is_set()
+
+    def wait(self, timeout=None):
+        return self._cancelled.wait(timeout)
+
+    def request_cancel(self):
+        """Accept cancellation only before the publication point of no return."""
+        with self._lock:
+            if self._publication_started:
+                return False
+            self._cancelled.set()
+            return True
+
+    def set(self):
+        # Event-compatible alias used by owned process cleanup and legacy paths.
+        return self.request_cancel()
+
+    def begin_publication(self):
+        """Atomically refuse a prior cancel or claim the target publication phase."""
+        with self._lock:
+            if self._cancelled.is_set():
+                return False
+            self._publication_started = True
+            return True
+
+
+def begin_publication(cancelled):
+    """Enter publication, preserving legacy callers that pass threading.Event."""
+    transition = getattr(cancelled, 'begin_publication', None)
+    if callable(transition):
+        return transition()
+    # Older test/runtime callers passed an Event. Their cancellation check is
+    # retained for compatibility; v1 uses DownloadControl for atomic ordering.
+    return not cancelled.is_set()
+
+
+def emit_error(code, message, context=None, **extra):
+    emit('error', **(context or {}), code=code, message=message, **extra)
+
+
+def request_context(request):
+    """Validate v1 correlation while retaining legacy revision requests."""
+    context = {}
+    request_id = None
+    if 'request_id' in request:
+        request_id = request.get('request_id')
+        if (not isinstance(request_id, str) or
+                len(request_id) > MAX_REQUEST_ID or
+                not REQUEST_ID_PATTERN.fullmatch(request_id)):
+            raise ProtocolError('invalid_request_id', 'Request ID must be 1-64 ASCII letters, digits, or . _ : - characters.')
+        context['request_id'] = request_id
+
+    if 'protocol_version' in request:
+        version = request.get('protocol_version')
+        if type(version) is not int:
+            raise ProtocolError('invalid_request', 'Protocol version must be an integer.', context)
+        if version != PROTOCOL_VERSION:
+            raise ProtocolError('unsupported_protocol_version', 'This catalog adapter supports protocol version 1.',
+                                context, supported_protocol_version=PROTOCOL_VERSION)
+        if request_id is None:
+            raise ProtocolError('request_id_required', 'Protocol version 1 requests require a request ID.', context)
+        context['protocol_version'] = PROTOCOL_VERSION
+
+    # Keep the old revision correlation field as an additive compatibility alias.
+    revision = request.get('revision')
+    if type(revision) is int and 0 <= revision <= 2147483647:
+        context['revision'] = revision
+    return context, 'protocol_version' in request
+
+
+def require_text(request, key, context, *, maximum=None, nonempty=False):
+    value = request.get(key, '')
+    if not isinstance(value, str) or (nonempty and not value) or (maximum is not None and len(value) > maximum):
+        raise ProtocolError('invalid_request', 'Invalid ' + key + ' field.', context)
+    return value
+
+
+def require_song_id(request, context, *, versioned):
+    value = request.get('id')
+    if versioned:
+        if type(value) is not int or value <= 0:
+            raise ProtocolError('invalid_request', 'Song ID must be a positive integer.', context)
+        return value
+    # Older unversioned callers commonly send the ID as a decimal string.
+    if type(value) not in (int, str) or not re.fullmatch(r'\d{1,10}', str(value)) or int(value) <= 0:
+        raise ProtocolError('invalid_request', 'Invalid song ID.', context)
+    return int(value)
+
+
+def login_required_page(document):
+    return re.search(r'you are not logged in|please login', document, re.I) is not None
+
+
 def plain(text):
     return html.unescape(re.sub(r'<[^>]*>', '', text)).strip()
 
 
 def parse_search(document):
-    if 'You are not logged in' in document:
+    if login_required_page(document):
         raise ValueError('USDB sign-in is required.')
     songs = []
     for row in re.findall(r'<tr\b[^>]*class=[\"\']list_tr[12][^>]*>(.*?)</tr>', document, re.S | re.I):
@@ -101,6 +222,9 @@ class Catalog:
     def __init__(self):
         self.jar = http.cookiejar.CookieJar()
         self.http = urllib.request.build_opener(SameOriginRedirect(), urllib.request.HTTPCookieProcessor(self.jar))
+        # This is only a process-local indication that the login flow was
+        # verified. It is never loaded from or written to disk.
+        self.authenticated = False
 
     def request(self, path, data=None):
         body = urllib.parse.urlencode(data).encode() if data is not None else None
@@ -113,30 +237,50 @@ class Catalog:
                 raise ValueError('Catalog response is too large.')
             return raw.decode(response.headers.get_content_charset() or 'utf-8', errors='replace')
 
+    def check_session_page(self, document):
+        if login_required_page(document):
+            self.jar.clear()
+            self.authenticated = False
+            raise AuthenticationRequiredError('USDB sign-in is required.')
+
     def login(self, user, password):
+        self.authenticated = False
         self.jar.clear()
         if not user or not password:
             raise ValueError('Enter your existing USDB username and password.')
-        self.request('/index.php?link=login', {'user': user, 'pass': password, 'login': 'Login'})
-        # An arbitrary session cookie alone is not proof of successful login.
-        page = self.request('/?link=list')
-        form_fields = set(re.findall(r'name\s*=\s*[\"\']([^\"\']+)', page, re.I))
-        has_catalog = {'interpret', 'title'}.issubset(form_fields) or bool(parse_search(page))
-        if 'Please login' in page or not has_catalog:
+        try:
+            self.request('/index.php?link=login', {'user': user, 'pass': password, 'login': 'Login'})
+            # An arbitrary session cookie alone is not proof of successful login.
+            page = self.request('/?link=list')
+            if login_required_page(page):
+                raise ValueError('USDB sign-in could not be verified.')
+            form_fields = set(re.findall(r'name\s*=\s*["\']([^"\']+)', page, re.I))
+            has_catalog = {'interpret', 'title'}.issubset(form_fields) or bool(parse_search(page))
+            if not has_catalog:
+                raise ValueError('USDB sign-in could not be verified.')
+        except Exception:
             self.jar.clear()
-            raise ValueError('USDB sign-in could not be verified.')
+            self.authenticated = False
+            raise
+        self.authenticated = True
 
     def search(self, artist, title, offset=0):
-        return parse_search(self.request('/?link=list', {
+        document = self.request('/?link=list', {
             'interpret': artist[:200], 'title': title[:200], 'limit': 6,
-            'start': max(0, int(offset)), 'order': 'lastchange', 'ud': 'desc'}))
+            'start': max(0, int(offset)), 'order': 'lastchange', 'ud': 'desc'})
+        self.check_session_page(document)
+        return parse_search(document)
 
     def details(self, song_id):
         song_id = int(song_id)
         if song_id <= 0:
             raise ValueError('Invalid song ID.')
-        chart = parse_chart(self.request('/?link=editsongs&id=' + str(song_id)))
-        links = media_links(self.request('/?link=detail&id=' + str(song_id)))
+        chart_page = self.request('/?link=editsongs&id=' + str(song_id))
+        self.check_session_page(chart_page)
+        chart = parse_chart(chart_page)
+        detail_page = self.request('/?link=detail&id=' + str(song_id))
+        self.check_session_page(detail_page)
+        links = media_links(detail_page)
         return chart, links
 
 
@@ -252,7 +396,10 @@ def install_song(root, song_id, chart, url, cancelled, notify=emit, downloader='
         # Existing destination is never overwritten. IDs avoid hostile artist paths.
         if target.exists():
             raise ValueError('This chart was installed by another operation.')
-        if cancelled.is_set():
+        # This is the linearizable point of no return. A v1 cancel racing this
+        # transition either sets the cancellation event first (and prevents any
+        # target creation), or is reported too late and cannot claim success.
+        if not begin_publication(cancelled):
             raise ValueError('Download cancelled.')
         target.mkdir()  # exclusive creation: even an existing empty folder is preserved
         owned_target = True
@@ -292,70 +439,180 @@ def install_song(root, song_id, chart, url, cancelled, notify=emit, downloader='
         remove_stage(stage, stage_identity)
 
 
-def main():
+def operation_error_code(op, cancelled):
+    if op == 'download' and cancelled.is_set():
+        return 'operation_cancelled'
+    if op == 'login':
+        return 'authentication_failed'
+    if op in ('search', 'details'):
+        return 'catalog_request_failed'
+    if op == 'download':
+        return 'download_failed'
+    return 'operation_failed'
+
+
+def main(downloads_enabled=False):
+    downloads_enabled = downloads_enabled is True
     catalog = Catalog()
-    cancelled = threading.Event()
+    cancelled = DownloadControl()
     worker = None
     active = False
+    active_operation = None
+    active_context = {}
     ready = threading.Lock()
-    def run(request):
-        nonlocal active
-        # Echo only a bounded numeric correlation value, never request content.
-        revision = request.get('revision')
-        context = {'revision': revision} if type(revision) is int and 0 <= revision <= 2147483647 else {}
+
+    def run(request, context, versioned):
+        nonlocal active, active_operation, active_context
+        op = request.get('op')
         try:
-            op = request.get('op')
             if op == 'login':
-                catalog.login(request.get('user', ''), request.get('password', ''))
-                emit('login', ok=True)
+                user = require_text(request, 'user', context, maximum=200, nonempty=True)
+                password = require_text(request, 'password', context, maximum=1024, nonempty=True)
+                catalog.login(user, password)
+                emit('login', **context, ok=True, auth_state='signed_in')
             elif op == 'search':
-                emit('results', **context, songs=catalog.search(request.get('artist', ''), request.get('title', ''), request.get('offset', 0)))
+                maximum = 200 if versioned else 16384
+                artist = require_text(request, 'artist', context, maximum=maximum)
+                title = require_text(request, 'title', context, maximum=maximum)
+                offset = request.get('offset', 0)
+                if versioned:
+                    if type(offset) is not int or not 0 <= offset <= 2147483647:
+                        raise ProtocolError('invalid_request', 'Offset must be a non-negative integer.', context)
+                else:
+                    try:
+                        offset = int(offset)
+                    except (TypeError, ValueError, OverflowError):
+                        raise ProtocolError('invalid_request', 'Invalid offset.', context)
+                    if not 0 <= offset <= 2147483647:
+                        raise ProtocolError('invalid_request', 'Invalid offset.', context)
+                songs = catalog.search(artist, title, offset)
+                emit('results', **context, songs=songs)
             elif op == 'details':
-                chart, links = catalog.details(request['id'])
-                emit('details', **context, id=request['id'], links=links)
+                song_id = require_song_id(request, context, versioned=versioned)
+                _, links = catalog.details(song_id)
+                event_id = song_id if versioned else request.get('id')
+                emit('details', **context, id=event_id, links=links)
             elif op == 'download':
-                chart, links = catalog.details(request['id'])
-                url = request.get('url', '')
+                # The raw adapter remains non-downloading unless an explicit
+                # launch flag opts in. Reject before details/network or install.
+                if not downloads_enabled:
+                    raise ProtocolError('download_disabled', 'Downloads are disabled for this adapter session.', context)
+                song_id = require_song_id(request, context, versioned=versioned)
+                url = require_text(request, 'url', context, maximum=512, nonempty=True)
+                root = require_text(request, 'root', context, maximum=4096, nonempty=True)
+                chart, links = catalog.details(song_id)
+                if cancelled.is_set():
+                    raise ValueError('Download cancelled.')
                 if url not in links:
                     raise ValueError('Selected media no longer matches the catalog source.')
-                folder = install_song(request['root'], request['id'], chart, url, cancelled)
-                emit('installed', folder=folder, id=request['id'])
+                notify = lambda kind, **data: emit(kind, **context, **data)
+                folder = install_song(root, song_id, chart, url, cancelled, notify=notify)
+                event_id = song_id if versioned else request.get('id')
+                emit('installed', **context, folder=folder, id=event_id)
+            elif op in ('cancel', 'quit'):
+                # These legacy control requests intentionally have no response.
+                return
             else:
-                raise ValueError('Unknown operation.')
+                raise ProtocolError('unknown_operation', 'Unknown operation.', context)
+        except AuthenticationRequiredError as error:
+            emit_error('authentication_required', str(error), context)
+        except ProtocolError as error:
+            emit_error(error.code, str(error), error.context, **error.extra)
         except ValueError as error:
-            emit('error', **context, message=str(error))
+            emit_error(operation_error_code(op, cancelled), str(error), context)
         except Exception:
             # Never serialize server responses, cookies, request bodies or credentials.
-            emit('error', **context, message='Catalog request failed. Check connection and sign-in.')
+            emit_error(operation_error_code(op, cancelled), 'Catalog request failed. Check connection and sign-in.', context)
         finally:
             with ready:
                 active = False
-                emit('idle')
+                active_operation = None
+                active_context = {}
+                emit('idle', **context)
+
+    def status(context):
+        with ready:
+            busy = active
+            running = active_operation
+        if busy and running == 'login':
+            auth_state = 'signing_in'
+            setup_state = 'signing_in'
+        elif catalog.authenticated:
+            auth_state = 'signed_in'
+            setup_state = 'ready'
+        else:
+            auth_state = 'signed_out'
+            setup_state = 'login_required'
+        emit('status', **context,
+             auth_state=auth_state,
+             setup_state=setup_state,
+             session_scope='process_memory_only',
+             busy=busy,
+             capabilities={'login': True, 'search': True, 'details': True,
+                           'download': bool(downloads_enabled)})
+
     try:
         for line in sys.stdin:
             if len(line) > 16384:
-                emit('error', message='Request too large.')
+                emit_error('request_too_large', 'Request too large.')
                 continue
             try:
                 request = json.loads(line)
                 if not isinstance(request, dict):
-                    raise ValueError()
-            except (ValueError, TypeError):
-                emit('error', message='Invalid request.')
+                    raise ProtocolError('invalid_request', 'Invalid request.')
+                context, versioned = request_context(request)
+            except ProtocolError as error:
+                emit_error(error.code, str(error), error.context, **error.extra)
                 continue
-            if request.get('op') in ('cancel', 'quit'):
-                cancelled.set()
-                if request['op'] == 'quit':
-                    break
-            else:
+            except (ValueError, TypeError):
+                emit_error('invalid_request', 'Invalid request.')
+                continue
+
+            op = request.get('op')
+            if op == 'status':
+                if not versioned:
+                    emit_error('protocol_version_required', 'Status requires protocol version 1 and a request ID.', context)
+                else:
+                    status(context)
+                continue
+            if op in ('cancel', 'quit'):
+                if not versioned:
+                    cancelled.set()
+                    if op == 'quit':
+                        break
+                    continue
                 with ready:
-                    if active:
-                        emit('error', message='An operation is already running.')
+                    target_request_id = active_context.get('request_id') if active else None
+                    if op == 'cancel':
+                        can_cancel = active and active_operation == 'download'
+                        if can_cancel:
+                            can_cancel = cancelled.request_cancel()
+                        emit('control_ack', **context, command='cancel',
+                             accepted=can_cancel, target_request_id=target_request_id,
+                             code=('cancel_requested' if can_cancel else
+                                   'too_late_publication_started' if active and active_operation == 'download' else
+                                   'operation_not_cancellable' if active else 'no_active_operation'),
+                             semantics='cancel_before_publication')
                         continue
-                    active = True
-                    cancelled.clear()
-                    worker = threading.Thread(target=run, args=(request,), daemon=True)
-                    worker.start()
+                    if active:
+                        cancelled.set()
+                    emit('control_ack', **context, command='quit', accepted=True,
+                         target_request_id=target_request_id,
+                         code='process_exit_requested',
+                         semantics='exit_after_bounded_worker_join')
+                if op == 'quit':
+                    break
+                continue
+            with ready:
+                if active:
+                    emit_error('busy', 'An operation is already running.', context, retryable=True)
+                    continue
+                active = True
+                active_operation = op
+                active_context = context
+                cancelled.clear()
+                worker = threading.Thread(target=run, args=(request, context, versioned), daemon=True)
+                worker.start()
     finally:
         cancelled.set()
         if worker:
@@ -363,4 +620,9 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    import argparse
+    parser = argparse.ArgumentParser(description='WorldParty JSON-lines catalog adapter.')
+    parser.add_argument('--enable-downloads', action='store_true',
+                        help='Explicitly enable the download capability for this process.')
+    args = parser.parse_args()
+    main(downloads_enabled=args.enable_downloads)

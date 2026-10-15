@@ -1,17 +1,29 @@
-UltraStar WorldParty with Visual Studio Code
-=================================================
+# Visual Studio Code build workflow (legacy)
 
-To compile UltraStar WorldParty using Visual Studio Code editor (https://code.visualstudio.com/) you must install in it the OmniPascal extension (https://marketplace.visualstudio.com/items?itemName=Wosi.omnipascal).
+The repository includes legacy VS Code task and keybinding files. Free Pascal
+and the project's development dependencies are required. The OmniPascal
+extension is optional editor support; the checked-in compile tasks invoke the
+repository's shell or batch build scripts.
 
-You must also have installed Free Pascal in your system (https://www.freepascal.org). In Debian/Ubuntu you can do it using `sudo apt install fp-compiler-3.2.0`.
+On Debian/Ubuntu, the repository-root helper is `./install`, not `./install.sh`.
+It runs `sudo apt-get`, then configure/build/install commands, and copies a
+desktop file into `/usr/share/applications`. Review those system-wide effects
+before running it. If you only need compiler dependencies, install the
+appropriate development packages for your distribution separately.
 
-And finally, if you are in Debian/Ubuntu, you must execute './install.sh' to get the dependencies, compile and add a shorcut to execute the game. On other systems you must do the same manually.
+Copy `dists/vscode/tasks.json` to `.vscode/tasks.json` in the repository root.
+Merge `dists/vscode/keybindings_worldparty.json` into your [user
+`keybindings.json`](https://code.visualstudio.com/docs/getstarted/keybindings),
+keeping any existing bindings you need. The checked-in bindings map to these
+tasks:
 
-After install all things you must copy tasks.json file to the .vscode folder in your root project path and merge the keybindings_worldparty.json with your own keybinding.json (more info https://code.visualstudio.com/docs/getstarted/keybindings). And now you can press:
-- F9 to compile
-- Ctrl+F9 to compile in debug mode
-- F10 to compile and execute the game
-- Ctrl+F10 to compile in debug mode and execute the game
-- Ctrl+F11 to only execute without compile
+- F9: `Compile debug`.
+- Ctrl+F9: `Compile`.
+- F10: `Compile debug execute`.
+- Ctrl+F10: `Compile execute`.
+- F11: `Execute debug without compile`.
+- Ctrl+F11: `Execute without compile`.
 
-If all works fine the executable will appear in game folder and link.res file will be copied to res folder.
+The task definitions call `dists/atom/linux/compile.sh` or
+`dists/atom/windows/compile.bat`; this VS Code configuration is a front end to
+those legacy wrappers, not a separate build implementation.

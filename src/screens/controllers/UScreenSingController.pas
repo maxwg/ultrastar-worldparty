@@ -388,6 +388,11 @@ begin
         Ini.DetectedPitch := 1 - Ini.DetectedPitch;
         Ini.Save;
       end;
+      SDLK_F8:
+      begin
+        Ini.PitchReadout := 1 - Ini.PitchReadout;
+        Ini.Save;
+      end;
       SDLK_ESCAPE,
       SDLK_BACKSPACE:
       begin
@@ -1011,6 +1016,7 @@ begin
   end;
 
   CurrentSong := CatSongs.Song[CatSongs.Selected];
+  ResetPitchTraces;
 
   if not CurrentSong.Analyse(ScreenSong.DuetChange) then
   begin

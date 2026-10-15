@@ -47,18 +47,25 @@ def main():
     tools = {name:getattr(args,name).resolve(strict=True) for name in ('cl','ffmpeg','ffprobe')}
     if not all(path.is_file() and path.suffix.lower()=='.exe' for path in tools.values()):
         parser.error('Tool arguments must name existing .exe files.')
-    manifest = json.loads((HERE/'retained-manifest.json').read_text(encoding='utf-8-sig'))
-    for name, expected in manifest['backend_sha256'].items():
+    retained_manifest_path = HERE/'retained-manifest.json'
+    retained_manifest = json.loads(retained_manifest_path.read_text(encoding='utf-8-sig'))
+    candidate_manifest_path = HERE/'current-candidate-manifest.json'
+    candidate_manifest = json.loads(candidate_manifest_path.read_text(encoding='utf-8-sig'))
+    for name, expected in candidate_manifest['backend_sha256'].items():
         if sha(REPO/'tools'/name) != expected:
             raise RuntimeError('Candidate backend hash mismatch: '+name)
-    for entry in manifest['retained_test_sources']:
+    if sha(HERE/'test_contract.py') != candidate_manifest['test_contract_sha256']:
+        raise RuntimeError('Current protocol contract-test hash mismatch.')
+    if sha(retained_manifest_path) != candidate_manifest['retained_manifest_sha256']:
+        raise RuntimeError('Historical retained-manifest hash mismatch.')
+    for entry in retained_manifest['retained_test_sources']:
         if sha(HERE/'retained'/entry['path']) != entry['sha256']:
             raise RuntimeError('Retained fixture hash mismatch: '+entry['path'])
     output.mkdir(parents=True, exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix='catalog-offline-', dir=output))
-    for name in manifest['backend_sha256']:
+    for name in candidate_manifest['backend_sha256']:
         shutil.copyfile(REPO/'tools'/name, work/name)
-    for entry in manifest['retained_test_sources']:
+    for entry in retained_manifest['retained_test_sources']:
         target = work/entry['path']
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(HERE/'retained'/entry['path'], target)
@@ -72,7 +79,11 @@ def main():
     receipt = {'schema_version':1,'started_utc':datetime.now(timezone.utc).isoformat(),
                'scope':'Offline synthetic fixtures only; no downloader, network, account, game or capture device.',
                'workspace':str(work),'python':sys.version,'python_executable':sys.executable,
-               'backend_sha256':manifest['backend_sha256'],'steps':[], 'status':'incomplete',
+               'backend_sha256':candidate_manifest['backend_sha256'],
+               'candidate_manifest_sha256':sha(candidate_manifest_path),
+               'retained_manifest_sha256':sha(retained_manifest_path),
+               'test_contract_sha256':candidate_manifest['test_contract_sha256'],
+               'steps':[], 'status':'incomplete',
                'selected_suites':selected,'suite_failures':[],
                'tool_files':{name:{'path':str(path),'sha256':sha(path)} for name,path in tools.items()},
                'real_600_second_timeout_rerun':False}
@@ -123,9 +134,12 @@ def main():
         receipt['status']='failed'
         receipt['error']=str(error)
     finally:
-        receipt['backend_unchanged']=all(sha(REPO/'tools'/name)==expected and sha(work/name)==expected for name,expected in manifest['backend_sha256'].items())
-        receipt['retained_fixtures_unchanged']=all(sha(HERE/'retained'/entry['path'])==entry['sha256'] and sha(work/entry['path'])==entry['sha256'] for entry in manifest['retained_test_sources'])
-        if not receipt['backend_unchanged'] or not receipt['retained_fixtures_unchanged']:
+        receipt['backend_unchanged']=all(sha(REPO/'tools'/name)==expected and sha(work/name)==expected for name,expected in candidate_manifest['backend_sha256'].items())
+        receipt['retained_fixtures_unchanged']=all(sha(HERE/'retained'/entry['path'])==entry['sha256'] and sha(work/entry['path'])==entry['sha256'] for entry in retained_manifest['retained_test_sources'])
+        receipt['test_contract_unchanged']=sha(HERE/'test_contract.py')==candidate_manifest['test_contract_sha256']
+        receipt['retained_manifest_unchanged']=sha(retained_manifest_path)==candidate_manifest['retained_manifest_sha256']
+        receipt['candidate_manifest_unchanged']=sha(candidate_manifest_path)==receipt['candidate_manifest_sha256']
+        if not receipt['backend_unchanged'] or not receipt['retained_fixtures_unchanged'] or not receipt['test_contract_unchanged'] or not receipt['retained_manifest_unchanged'] or not receipt['candidate_manifest_unchanged']:
             receipt['status']='failed'
         receipt['finished_utc']=datetime.now(timezone.utc).isoformat()
         path=work/'integration-tests-receipt.json'
