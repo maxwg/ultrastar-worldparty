@@ -137,17 +137,37 @@ begin
 end;
 
 procedure TScreenSongCatalog.UpdateView;
-var I: integer; Prefix, ShownPassword, Actions: string;
+var I: integer; Prefix, FieldPrefix, ShownPassword, Actions: string;
 begin
-  Prefix := ''; if FFocus = 0 then Prefix := '> ';
-  Text[FArtistText].Text := ShortLine(Prefix + Language.Translate('SONG_CATALOG_ARTIST') + ' ' + FArtist);
-  Prefix := ''; if FFocus = 1 then Prefix := '> ';
-  Text[FTitleText].Text := ShortLine(Prefix + Language.Translate('SONG_CATALOG_TITLE_FIELD') + ' ' + FTitle);
-  Prefix := ''; if FFocus = 2 then Prefix := '> ';
-  Text[FUserText].Text := ShortLine(Prefix + Language.Translate('SONG_CATALOG_USERNAME') + ' ' + FUsername);
-  Prefix := ''; if FFocus = 3 then Prefix := '> ';
+  FieldPrefix := ''; if FFocus = 0 then FieldPrefix := '> ';
+  FieldPrefix := FieldPrefix + Language.Translate('SONG_CATALOG_ARTIST') + ' ';
+  if FFocus = 0 then
+    Text[FArtistText].Text := FormatCatalogInputLine(FieldPrefix, FArtist, FDisplayCharLimit)
+  else
+    Text[FArtistText].Text := ShortLine(FieldPrefix + FArtist);
+
+  FieldPrefix := ''; if FFocus = 1 then FieldPrefix := '> ';
+  FieldPrefix := FieldPrefix + Language.Translate('SONG_CATALOG_TITLE_FIELD') + ' ';
+  if FFocus = 1 then
+    Text[FTitleText].Text := FormatCatalogInputLine(FieldPrefix, FTitle, FDisplayCharLimit)
+  else
+    Text[FTitleText].Text := ShortLine(FieldPrefix + FTitle);
+
+  FieldPrefix := ''; if FFocus = 2 then FieldPrefix := '> ';
+  FieldPrefix := FieldPrefix + Language.Translate('SONG_CATALOG_USERNAME') + ' ';
+  if FFocus = 2 then
+    Text[FUserText].Text := FormatCatalogInputLine(FieldPrefix, FUsername, FDisplayCharLimit)
+  else
+    Text[FUserText].Text := ShortLine(FieldPrefix + FUsername);
+
+  FieldPrefix := ''; if FFocus = 3 then FieldPrefix := '> ';
   ShownPassword := StringOfChar('*', LengthUTF8(FPassword));
-  Text[FPasswordText].Text := ShortLine(Prefix + Language.Translate('SONG_CATALOG_PASSWORD') + ' ' + ShownPassword);
+  FieldPrefix := FieldPrefix + Language.Translate('SONG_CATALOG_PASSWORD') + ' ';
+  if FFocus = 3 then
+    Text[FPasswordText].Text := FormatCatalogInputLine(FieldPrefix, ShownPassword, FDisplayCharLimit)
+  else
+    Text[FPasswordText].Text := ShortLine(FieldPrefix + ShownPassword);
+
   Prefix := ''; if FFocus = 4 then Prefix := '> ';
   Actions := Prefix + Language.Translate('SONG_CATALOG_SEARCH') + ' ';
   Prefix := ''; if FFocus = 5 then Prefix := '> ';

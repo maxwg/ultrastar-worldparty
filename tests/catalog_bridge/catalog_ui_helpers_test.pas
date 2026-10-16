@@ -38,7 +38,7 @@ begin
   Check(L.ResultsStep >= L.FontSize + 2, 'result rows have a non-overlap gap');
 end;
 
-var S: UTF8String;
+var S, InputValue, InputLine, LegacyLine, Emoji, Ellipsis: UTF8String;
 begin
   CheckLayout(640, 480);
   CheckLayout(800, 600);
@@ -63,6 +63,46 @@ begin
         'single-line display truncation counts Unicode characters, not bytes');
   Check(TruncateCatalogLine(S, 0) = '', 'zero-width display truncates safely');
   Check(LengthUTF8(S) = 3, 'display truncation leaves underlying metadata unchanged');
+
+  InputValue := 'abcdefghijklmnop';
+  Ellipsis := UCS4ToUTF8String($2026);
+  InputLine := FormatCatalogInputLine('> Artist: ', InputValue, 18);
+  Check(InputLine = '> Artist: ' + Ellipsis + 'jklmnop',
+        'focused input keeps the typed suffix and marks hidden leading text');
+  Check(LengthUTF8(InputLine) = 18, 'focused input respects its character cap');
+  Check(InputValue = 'abcdefghijklmnop', 'display formatting does not change the submitted query');
+  LegacyLine := TruncateCatalogLine('> Artist: ' + InputValue, 18);
+  Check(LegacyLine = '> Artist: abcdefgh',
+        'old leading truncation displayed only the prefix of a long typed value');
+  Check((InputLine <> LegacyLine) and (Pos('jklmnop', InputLine) > 0),
+        'focused rendering now exposes the current input suffix');
+  Check(FormatCatalogInputLine('> Artist: ', 'xy', 18) = '> Artist: xy',
+        'short focused values remain unchanged');
+
+  Emoji := UCS4ToUTF8String($1F642);
+  InputValue := 'abcdefgh' + Emoji + 'XYZ';
+  InputLine := FormatCatalogInputLine('> ', InputValue, 9);
+  Check(InputLine = '> ' + Ellipsis + 'gh' + Emoji + 'XYZ',
+        'focused suffix preserves complete multibyte UTF-8 characters');
+  Check(LengthUTF8(InputLine) = 9, 'multibyte focused input respects character cap');
+  Check(InputValue = 'abcdefgh' + Emoji + 'XYZ', 'UTF-8 display leaves the full query unchanged');
+
+  InputValue := StringOfChar('*', 12);
+  InputLine := FormatCatalogInputLine('> Pass: ', InputValue, 12);
+  Check(InputLine = '> Pass: ' + Ellipsis + '***',
+        'focused password rendering preserves only the already-masked suffix');
+
+  InputLine := FormatCatalogInputLine('a very long translated label: ', 'value', 8);
+  Check((LengthUTF8(InputLine) = 8) and (Pos(Ellipsis + 'e', InputLine) > 0),
+        'long localized prefix still leaves a visible input suffix within the cap');
+  Check(FormatCatalogInputLine('a very long translated label: ', '', 8) =
+        'a very' + Ellipsis,
+        'empty input with an overlong prefix remains bounded and marked');
+  Check(FormatCatalogInputLine('x', 'value', 1) = Ellipsis,
+        'one-character display cap remains bounded with an explicit truncation mark');
+  Check(FormatCatalogInputLine('x', 'value', 0) = '', 'zero character cap returns an empty line');
+  Check(FormatCatalogInputLine('x', 'value', -1) = '', 'negative character cap returns an empty line');
+
   DeleteLastCatalogCharacter(S);
   Check((LengthUTF8(S) = 2) and (Pos('A', S) = 1), 'backspace removes one multibyte character');
   DeleteLastCatalogCharacter(S);
