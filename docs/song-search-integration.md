@@ -9,9 +9,13 @@ screen backed by the versioned JSON-lines adapter. It remains disabled unless
 both `-catalog-python <absolute executable>` and
 `-catalog-adapter <absolute script>` are supplied, and those files exist.
 There is no PATH or working-directory search, auto-install, or package change.
-The screen supports explicit sign-in and search only; it has no details or
-download action. Downloads stay disabled because the game never passes the
-adapter's opt-in flag. Local rescan remains available in the same menu.
+The screen supports explicit sign-in, search, keyboard result selection, and
+source details. Tab and Shift+Tab move focus; Up/Down select or scroll results;
+Enter fetches source details only for the selected numeric song ID. Escape
+returns to the same result and scroll position before closing the screen.
+Source details show catalog metadata and YouTube video IDs without opening
+links. There is no download action. Downloads stay disabled because the game
+never passes the adapter's opt-in flag. Local rescan remains available in the same menu.
 
 The reference is an interactive Ink/React
 terminal program, not a stable headless JSON service. It searches USDB via HTML
@@ -24,7 +28,7 @@ registers an account using a generated Gmail address and stores credentials.
 An integration must use explicit user setup instead, without silently creating
 accounts or copying browser credentials.
 
-The current slice does not select or retrieve chart details, download media,
+The current slice does not retrieve playable chart content, download media,
 write the local library, or make results playable. Those are later, separately
 reviewed steps. Existing local song search and rescan remain unchanged.
 
@@ -48,9 +52,11 @@ Requirements before calling this complete:
   only its own `SIGPIPE`, then restores the calling thread's prior signal mask.
   The application source does not set a process-wide `SIGPIPE` disposition. On
   Windows the bridge requests `PIPE_NOWAIT` on the `TProcess` input pipe; if that
-  anonymous-pipe mode is unsupported, startup fails closed. This behavior has
-  not been executed on Windows, so this slice is not a completed Windows UI
-  feature. The three pending-write errors use explicit equality/or checks; a
+  anonymous-pipe mode is unsupported, startup fails closed. Windows
+  source-details validation currently fails for an escaped accented
+  song name (Beyonc\u00e9 becomes Beyonc? in the Win32 FPC 3.2.2 test).
+  This slice is not a completed Windows UI feature. The three pending-write
+  errors use explicit equality/or checks; a
   compiled portable regression exercises Win32 values 232, 997, and 536, while
   a source check ties the Windows branch to its named constants. This does not
   verify anonymous-pipe behavior on Windows. Linux also starts a transport-owned waitpid monitor before launching
@@ -81,11 +87,31 @@ A developer-only backend/test slice is described in
 [song-catalog-backend.md](song-catalog-backend.md). The bridge's current
 offline fake-transport and inert-child coverage is in `tests/catalog_bridge/`.
 This is source-only and not packaged or a release claim. The current test host
-ran CPython 3.12.14 x64 and Free Pascal 3.2.2 x64, including a clean full-app
+ran CPython 3.13.5 x64 and Free Pascal 3.2.2 x64, including a clean full-app
 compile/link with no missing shared libraries. Layout tests check all 15 text
 rectangles for bounds and pairwise non-overlap at 320x240 through 1920x1080;
 dynamic status/input/result rows are single-line, UTF-8 truncated for display,
-without changing result metadata. No interactive GUI runtime or screenshot
-test was recorded for this source-only candidate. `Path.unlink(missing_ok=True)`
+without changing result metadata. Linux offscreen synthetic GUI checks
+exercised result selection, source loading,
+success/error, scrolling and Escape retention. ASCII controls in remote metadata
+are replaced by spaces in display copies only, preserving original values and
+UTF-8 bytes. These checks used an inert adapter and do not establish live catalog
+authentication, physical audio behavior, or Windows GUI correctness.
+`Path.unlink(missing_ok=True)`
 suggests Python 3.8 as a source API floor, but Python 3.8 compatibility has not
 been executed or claimed.
+
+## Current keyboard validation (2026-10-16)
+
+The Linux bridge suite passes 352 assertions, and the selection/focus suite
+passes 282 assertions, including reverse Tab navigation that preserves the
+selected song and detail scroll position. Layout/input and portable-expression
+checks also pass. A clean full application compile passes with 37 existing
+warnings and 341 notes. The source-details UI was exercised in an offscreen
+Linux runtime; the later Shift+Tab addition is covered by the pure navigation
+suite and full compile, not an SDL keyboard-injection runtime check.
+
+Downloads remain disabled. Before exposing installation, resolve descendant
+ownership on helper termination, choose an explicit scanned install directory,
+and validate progress/cancellation/publication handling. Do not infer release
+readiness from the offline metadata/source-details tests.

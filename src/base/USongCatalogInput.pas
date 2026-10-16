@@ -14,6 +14,16 @@ function FormatCatalogInputLine(const Prefix, Value: UTF8String;
 
 implementation
 
+function SingleLineCatalogText(const Value: UTF8String): UTF8String;
+var I: integer;
+begin
+  Result := Value;
+  // Replace only ASCII controls in the display copy. UTF-8 bytes and the
+  // original query/metadata remain untouched; no Unicode normalization occurs.
+  for I := 1 to Length(Result) do
+    if (Ord(Result[I]) < 32) or (Ord(Result[I]) = 127) then Result[I] := ' ';
+end;
+
 function IsPrintableCatalogCharacter(CodePoint: UCS4Char): boolean;
 var Scalar: LongInt;
 begin
@@ -29,26 +39,30 @@ begin
 end;
 
 function TruncateCatalogLine(const Value: UTF8String; MaxCharacters: integer): UTF8String;
+var DisplayValue: UTF8String;
 begin
   if MaxCharacters <= 0 then Exit('');
-  if LengthUTF8(Value) > MaxCharacters then
-    Result := UTF8Copy(Value, 1, MaxCharacters)
+  DisplayValue := SingleLineCatalogText(Value);
+  if LengthUTF8(DisplayValue) > MaxCharacters then
+    Result := UTF8Copy(DisplayValue, 1, MaxCharacters)
   else
-    Result := Value;
+    Result := DisplayValue;
 end;
 
 function FormatCatalogInputLine(const Prefix, Value: UTF8String;
   MaxCharacters: integer): UTF8String;
 var
   PrefixLength, ValueLength, PrefixLimit, TailLength: integer;
-  DisplayPrefix, Tail, Ellipsis: UTF8String;
+  CleanPrefix, CleanValue, DisplayPrefix, Tail, Ellipsis: UTF8String;
 begin
   if MaxCharacters <= 0 then Exit('');
   Ellipsis := UCS4ToUTF8String($2026);
-  PrefixLength := LengthUTF8(Prefix);
-  ValueLength := LengthUTF8(Value);
+  CleanPrefix := SingleLineCatalogText(Prefix);
+  CleanValue := SingleLineCatalogText(Value);
+  PrefixLength := LengthUTF8(CleanPrefix);
+  ValueLength := LengthUTF8(CleanValue);
   if PrefixLength + ValueLength <= MaxCharacters then
-    Exit(Prefix + Value);
+    Exit(CleanPrefix + CleanValue);
 
   // Reserve one character for the truncation mark and at least one for the
   // current end of the input. If a translated label is too long, shorten it
@@ -56,15 +70,15 @@ begin
   if MaxCharacters = 1 then Exit(Ellipsis);
   PrefixLimit := MaxCharacters - 2;
   if PrefixLength > PrefixLimit then
-    DisplayPrefix := UTF8Copy(Prefix, 1, PrefixLimit)
+    DisplayPrefix := UTF8Copy(CleanPrefix, 1, PrefixLimit)
   else
-    DisplayPrefix := Prefix;
+    DisplayPrefix := CleanPrefix;
 
   TailLength := MaxCharacters - LengthUTF8(DisplayPrefix) - 1;
   if TailLength > ValueLength then TailLength := ValueLength;
   Tail := '';
   if TailLength > 0 then
-    Tail := UTF8Copy(Value, ValueLength - TailLength + 1, TailLength);
+    Tail := UTF8Copy(CleanValue, ValueLength - TailLength + 1, TailLength);
   Result := DisplayPrefix + Ellipsis + Tail;
 end;
 

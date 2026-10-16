@@ -18,6 +18,8 @@ while IFS= read -r dir; do FPC_UNIT_FLAGS+=("-Fu$dir"); done < <(find "$FPC_UNIT
 "$BUILD_DIR/bin/catalog_bridge_test" "$CATALOG_TEST_PYTHON" "$ROOT/tests/catalog_bridge/inert_child.py" "$ROOT/tools/song_catalog.py" "$ROOT/tests/catalog_bridge/nonreader_child.py" "$ROOT/tests/catalog_bridge/closed_stdin_child.py"
 "$FPC" "${FPC_FLAGS[@]}" "${FPC_UNIT_FLAGS[@]}" -Fu"$ROOT/src/base" -FU"$BUILD_DIR/units" -FE"$BUILD_DIR/bin" "$ROOT/tests/catalog_bridge/catalog_ui_helpers_test.pas"
 "$BUILD_DIR/bin/catalog_ui_helpers_test"
+"$FPC" "${FPC_FLAGS[@]}" "${FPC_UNIT_FLAGS[@]}" -Fu"$ROOT/src/base" -FU"$BUILD_DIR/units" -FE"$BUILD_DIR/bin" "$ROOT/tests/catalog_bridge/catalog_selection_test.pas"
+"$BUILD_DIR/bin/catalog_selection_test"
 "$FPC" "${FPC_FLAGS[@]}" "${FPC_UNIT_FLAGS[@]}" -Fu"$BUILD_DIR/units" -FU"$BUILD_DIR/units" -FE"$BUILD_DIR/bin" "$ROOT/tests/catalog_bridge/catalog_pipe_error_expression_test.pas"
 "$BUILD_DIR/bin/catalog_pipe_error_expression_test"
 "$CATALOG_TEST_PYTHON" "$ROOT/tests/catalog_bridge/check_windows_paths.py"

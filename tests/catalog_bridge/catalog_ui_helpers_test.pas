@@ -38,7 +38,8 @@ begin
   Check(L.ResultsStep >= L.FontSize + 2, 'result rows have a non-overlap gap');
 end;
 
-var S, InputValue, InputLine, LegacyLine, Emoji, Ellipsis: UTF8String;
+var S, InputValue, InputLine, LegacyLine, Emoji, Ellipsis, OriginalValue, DisplayValue: UTF8String;
+  I: integer;
 begin
   CheckLayout(640, 480);
   CheckLayout(800, 600);
@@ -102,6 +103,30 @@ begin
         'one-character display cap remains bounded with an explicit truncation mark');
   Check(FormatCatalogInputLine('x', 'value', 0) = '', 'zero character cap returns an empty line');
   Check(FormatCatalogInputLine('x', 'value', -1) = '', 'negative character cap returns an empty line');
+
+  InputValue := '';
+  for I := 0 to 31 do InputValue := InputValue + AnsiChar(I);
+  InputValue := InputValue + AnsiChar(127);
+  OriginalValue := InputValue;
+  Check(TruncateCatalogLine(InputValue, 100) = StringOfChar(' ', 33),
+        'all ASCII controls become spaces only in the single-line display copy');
+  Check(InputValue = OriginalValue, 'control sanitization leaves original catalog metadata intact');
+  InputValue := 'A' + Emoji + #13#10#9 + 'B';
+  OriginalValue := InputValue;
+  DisplayValue := TruncateCatalogLine(InputValue, 100);
+  Check(DisplayValue = 'A' + Emoji + '   B', 'multiline metadata cannot break fixed rows and UTF-8 stays intact');
+  Check(TruncateCatalogLine(InputValue, 3) = 'A' + Emoji + ' ',
+        'sanitized display truncation still counts complete UTF-8 characters');
+  Check(InputValue = OriginalValue, 'sanitized truncation preserves full original multiline metadata');
+  InputValue := 'one' + #10 + 'two' + #9 + 'suffix';
+  OriginalValue := InputValue;
+  InputLine := FormatCatalogInputLine('> Ar' + #10 + 't: ', InputValue, 18);
+  Check((Pos(#10, InputLine) = 0) and (Pos(#9, InputLine) = 0) and
+        (Pos('suffix', InputLine) > 0) and (LengthUTF8(InputLine) = 18),
+        'focused input sanitizes prefix/value while preserving the visible suffix and cap');
+  Check(InputValue = OriginalValue, 'focused display sanitization leaves the submitted value unchanged');
+  Check(FormatCatalogInputLine('> ' + #9, 'A' + #10 + 'B', 30) = '>  A B',
+        'short focused input also sanitizes controls before the no-truncation return');
 
   DeleteLastCatalogCharacter(S);
   Check((LengthUTF8(S) = 2) and (Pos('A', S) = 1), 'backspace removes one multibyte character');
