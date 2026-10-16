@@ -206,7 +206,8 @@ var D: TJSONData;
 begin
   Value := 0;
   D := Obj.Find(Key);
-  Result := Assigned(D) and (D is TJSONIntegerNumber);
+  Result := Assigned(D) and
+            ((D is TJSONIntegerNumber) or (D is TJSONInt64Number));
   if Result then Value := D.AsInt64;
 end;
 
@@ -769,7 +770,8 @@ var
   EventType, RequestID, Code, State, Scope, Artist, Title, Lang, Row, Command: string;
   Version: Int64;
   Download, Accepted, LoginOK: boolean;
-  I, SongID: Int64;
+  I: Integer; // TJSONArray.Count/Items use LongInt indices in FPC 3.2.2.
+  SongID: Int64;
 begin
   try
     Data := GetJSON(string(Line), true);

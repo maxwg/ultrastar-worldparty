@@ -1,4 +1,4 @@
-"""Run the exact retained Windows suites in fresh scratch, with no real downloader.
+"""Run current and retained Windows suites in fresh scratch, with no real downloader.
 
 Requires a configured MSVC x64 developer environment and explicit existing native
 FFmpeg/ffprobe paths. No package installation, network lookup, or game launch.
@@ -22,6 +22,50 @@ REPO = HERE.parent.parent
 def sha(path):
     with path.open('rb') as source:
         return hashlib.file_digest(source, 'sha256').hexdigest()
+
+def sha_text_lf(path):
+    # The manifest records Git's LF blob; core.autocrlf may check this source
+    # out with CRLF on Windows without changing its content.
+    return hashlib.sha256(path.read_bytes().replace(b'\r\n', b'\n')).hexdigest()
+
+def copy_retained_sources(retained_root, work, entries):
+    """Keep immutable historical copies even when current sources overlay their run paths."""
+    for entry in entries:
+        source = retained_root/entry['path']
+        for base in (work, work/'retained-sources'):
+            target = base/entry['path']
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, target)
+
+def copy_windows_test_sources(source_root, work, entries):
+    for entry in entries:
+        target = work/'catalog-tests'/entry['path']
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source_root/entry['path'], target)
+
+def retained_sources_unchanged(retained_root, work, retained_sources, windows_test_sources):
+    # Candidate test files intentionally overlay selected historical run paths.
+    overlays = {
+        os.path.normcase(os.path.normpath(str(Path('catalog-tests')/entry['path'])))
+        for entry in windows_test_sources
+    }
+    for entry in retained_sources:
+        expected = entry['sha256']
+        if (sha(retained_root/entry['path']) != expected or
+                sha(work/'retained-sources'/entry['path']) != expected):
+            return False
+        active = Path(entry['path'])
+        if (os.path.normcase(os.path.normpath(str(active))) not in overlays and
+                sha(work/active) != expected):
+            return False
+    return True
+
+def windows_sources_unchanged(source_root, work, entries):
+    return all(
+        sha_text_lf(source_root/entry['path']) == entry['sha256'] and
+        sha_text_lf(work/'catalog-tests'/entry['path']) == entry['sha256']
+        for entry in entries
+    )
 
 def load_module(name, path):
     spec = importlib.util.spec_from_file_location(name, path)
@@ -54,21 +98,23 @@ def main():
     for name, expected in candidate_manifest['backend_sha256'].items():
         if sha(REPO/'tools'/name) != expected:
             raise RuntimeError('Candidate backend hash mismatch: '+name)
-    if sha(HERE/'test_contract.py') != candidate_manifest['test_contract_sha256']:
+    if sha_text_lf(HERE/'test_contract.py') != candidate_manifest['test_contract_sha256']:
         raise RuntimeError('Current protocol contract-test hash mismatch.')
-    if sha(retained_manifest_path) != candidate_manifest['retained_manifest_sha256']:
+    if sha_text_lf(retained_manifest_path) != candidate_manifest['retained_manifest_sha256']:
         raise RuntimeError('Historical retained-manifest hash mismatch.')
     for entry in retained_manifest['retained_test_sources']:
         if sha(HERE/'retained'/entry['path']) != entry['sha256']:
             raise RuntimeError('Retained fixture hash mismatch: '+entry['path'])
+    windows_test_sources = candidate_manifest.get('windows_test_sources', [])
+    for entry in windows_test_sources:
+        if sha_text_lf(HERE/'windows'/entry['path']) != entry['sha256']:
+            raise RuntimeError('Current Windows test-source hash mismatch: '+entry['path'])
     output.mkdir(parents=True, exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix='catalog-offline-', dir=output))
     for name in candidate_manifest['backend_sha256']:
         shutil.copyfile(REPO/'tools'/name, work/name)
-    for entry in retained_manifest['retained_test_sources']:
-        target = work/entry['path']
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(HERE/'retained'/entry['path'], target)
+    copy_retained_sources(HERE/'retained', work, retained_manifest['retained_test_sources'])
+    copy_windows_test_sources(HERE/'windows', work, windows_test_sources)
     shutil.copyfile(HERE/'test_contract.py', work/'test_contract.py')
     shutil.copyfile(HERE/'test_launch_accounting.py', work/'test_launch_accounting.py')
     for name in ('test_installer_watchdog.py', 'test_outer_boundary_worker.py'):
@@ -81,8 +127,9 @@ def main():
                'workspace':str(work),'python':sys.version,'python_executable':sys.executable,
                'backend_sha256':candidate_manifest['backend_sha256'],
                'candidate_manifest_sha256':sha(candidate_manifest_path),
-               'retained_manifest_sha256':sha(retained_manifest_path),
+               'retained_manifest_sha256':sha_text_lf(retained_manifest_path),
                'test_contract_sha256':candidate_manifest['test_contract_sha256'],
+               'windows_test_sources_sha256':{entry['path']:entry['sha256'] for entry in windows_test_sources},
                'steps':[], 'status':'incomplete',
                'selected_suites':selected,'suite_failures':[],
                'tool_files':{name:{'path':str(path),'sha256':sha(path)} for name,path in tools.items()},
@@ -135,11 +182,12 @@ def main():
         receipt['error']=str(error)
     finally:
         receipt['backend_unchanged']=all(sha(REPO/'tools'/name)==expected and sha(work/name)==expected for name,expected in candidate_manifest['backend_sha256'].items())
-        receipt['retained_fixtures_unchanged']=all(sha(HERE/'retained'/entry['path'])==entry['sha256'] and sha(work/entry['path'])==entry['sha256'] for entry in retained_manifest['retained_test_sources'])
-        receipt['test_contract_unchanged']=sha(HERE/'test_contract.py')==candidate_manifest['test_contract_sha256']
-        receipt['retained_manifest_unchanged']=sha(retained_manifest_path)==candidate_manifest['retained_manifest_sha256']
+        receipt['retained_fixtures_unchanged']=retained_sources_unchanged(HERE/'retained', work, retained_manifest['retained_test_sources'], windows_test_sources)
+        receipt['test_contract_unchanged']=sha_text_lf(HERE/'test_contract.py')==candidate_manifest['test_contract_sha256']
+        receipt['retained_manifest_unchanged']=sha_text_lf(retained_manifest_path)==candidate_manifest['retained_manifest_sha256']
+        receipt['windows_test_sources_unchanged']=windows_sources_unchanged(HERE/'windows', work, windows_test_sources)
         receipt['candidate_manifest_unchanged']=sha(candidate_manifest_path)==receipt['candidate_manifest_sha256']
-        if not receipt['backend_unchanged'] or not receipt['retained_fixtures_unchanged'] or not receipt['test_contract_unchanged'] or not receipt['retained_manifest_unchanged'] or not receipt['candidate_manifest_unchanged']:
+        if not receipt['backend_unchanged'] or not receipt['retained_fixtures_unchanged'] or not receipt['test_contract_unchanged'] or not receipt['retained_manifest_unchanged'] or not receipt['windows_test_sources_unchanged'] or not receipt['candidate_manifest_unchanged']:
             receipt['status']='failed'
         receipt['finished_utc']=datetime.now(timezone.utc).isoformat()
         path=work/'integration-tests-receipt.json'

@@ -17,7 +17,7 @@ if not %2==execute if not %2==execute-debug (
     )
     call rm -rf ..\build ..\game\%%name%%.exe
     mkdir ..\build
-    call fpc WorldParty.dpr -FE..\game -FU..\build %%parameters%% -o%%name%%.exe
+    call fpc -Fu.\base -Fu.\screens WorldParty.dpr -FE..\game -FU..\build %%parameters%% -o%%name%%.exe
     if exist ..\build\link.res (
         move /Y ..\build\link.res ..\res\link.res
     )

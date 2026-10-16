@@ -9,6 +9,16 @@
   },
   "test_contract_sha256": "298e783bfac3809d2f3fcff922e988ca769a9b93a1d5528a5c70fb65dec026ae",
   "retained_manifest_sha256": "1b2b4c0de65e8412b62d93b4cbe66686fd84b3429f130244e6fbcf957fa78b8b",
+  "windows_test_sources": [
+    {
+      "path": "install_runner.py",
+      "sha256": "6e83f0785f1be0f33af713e83aa54c7982c720bbc9e3dd2a6a8c16b910d7faf1"
+    },
+    {
+      "path": "test_install_windows.py",
+      "sha256": "c7dd19eb8209b0dadc45056fbedb894d7a71a5acf57329b9f93ed19593ea0539"
+    }
+  ],
   "verification": {
     "offline_contract": {
       "status": "passed",

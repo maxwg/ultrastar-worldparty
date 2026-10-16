@@ -158,10 +158,11 @@ begin
       Check(O.Get('request_id', '') <> LoginID, 'search receives a new request ID');
     finally O.Free; end;
     T.Push(Format('{"type":"results","protocol_version":1,"request_id":"stale-id","songs":[{"id":9,"artist":"stale","title":"stale"}]}'#10, []));
-    T.Push(Format('{"type":"results","protocol_version":1,"request_id":"%s","songs":[{"id":42,"artist":"A","title":"T","language":"EN"}]}'#10, [SearchID]));
+    // Above the 32-bit ordinal range: SongID remains 64-bit while I indexes the array.
+    T.Push(Format('{"type":"results","protocol_version":1,"request_id":"%s","songs":[{"id":2147483648,"artist":"A","title":"T","language":"EN"}]}'#10, [SearchID]));
     S.Poll;
     Check(S.Results.Count = 1, 'stale correlation ignored and valid results accepted');
-    Check(Pos('42', S.Results[0]) = 1, 'results remain metadata rows');
+    Check(Pos('2147483648', S.Results[0]) = 1, '64-bit catalog IDs remain intact on 32-bit builds');
 
     T.Push(Format('{"type":"error","protocol_version":1,"request_id":"%s","code":"authentication_required","message":"fixture"}'#10, [SearchID]));
     S.Poll;
@@ -496,10 +497,11 @@ begin
     Check((PID > 0) and T.Running, 'nonreader child starts as an exact owned process');
     Started := GetTickCount64;
     T.SendLine(UTF8String(StringOfChar('x', 32000)));
-    T.ReadAvailable(16384); // nonblocking partial write; the child never reads stdin
-    T.SendLine(UTF8String(StringOfChar('y', 35000)));
+    T.ReadAvailable(16384); // at most 4096 bytes drain; the child never reads stdin
+    // 32001 + 32001 fits the queue; the final 8001 bytes overflows it even after one partial write.
+    T.SendLine(UTF8String(StringOfChar('y', 32000)));
     try
-      T.SendLine(UTF8String(StringOfChar('z', 4000)));
+      T.SendLine(UTF8String(StringOfChar('z', 8000)));
       Check(false, 'outbound queue rejects capacity overflow');
     except
       Check(true, 'outbound queue is bounded');
@@ -630,6 +632,14 @@ end;
 
 var PythonPath, AdapterPath: string;
 begin
+  if (ParamCount = 3) and (ParamStr(3) = '--ordinal-regression') then
+  begin
+    PythonPath := ParamStr(1);
+    AdapterPath := ParamStr(2);
+    TestFakeTransport(PythonPath, AdapterPath);
+    WriteLn('PASS: ', Assertions, ' focused catalog ID/array-index assertions');
+    Halt(0);
+  end;
   if ParamCount <> 5 then
   begin
     WriteLn('Usage: catalog_bridge_test <absolute-python> <absolute-inert-child.py> <absolute-adapter.py> <absolute-nonreader.py> <absolute-closed-stdin.py>');
