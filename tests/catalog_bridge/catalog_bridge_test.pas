@@ -1,6 +1,7 @@
 program CatalogBridgeTest;
 {$mode delphi}{$H+}
-uses {$IFDEF UNIX}cthreads,{$ENDIF} SysUtils, Classes, fpjson, jsonparser, USongCatalogBridge
+// Match WorldParty.dpr's Unix Unicode manager for escaped JSON metadata.
+uses {$IFDEF UNIX}cthreads, cwstring,{$ENDIF} SysUtils, Classes, fpjson, jsonparser, USongCatalogBridge
   {$IFDEF UNIX}, BaseUnix{$ENDIF};
 
 type
@@ -12,6 +13,7 @@ type
     Requests: TStringList;
     Incoming: UTF8String;
     Failure: string;
+    FailWrites: boolean;
     constructor Create;
     destructor Destroy; override;
     procedure Start(const PythonPath, AdapterPath: string); override;
@@ -57,6 +59,7 @@ end;
 
 procedure TFakeTransport.SendLine(const Line: UTF8String);
 begin
+  if FailWrites then raise Exception.Create('fixture write failure');
   Requests.Add(string(Line));
 end;
 
@@ -630,8 +633,338 @@ begin
   finally T.Free; end;
 end;
 
+procedure StartReadyFake(const PythonPath, AdapterPath: string;
+  out T: TFakeTransport; out S: TCatalogSession; const AuthState: string = 'signed_in';
+  const DetailsCapability: string = 'true');
+var O: TJSONObject; RequestID: string;
+begin
+  T := TFakeTransport.Create;
+  S := TCatalogSession.Create(T, false);
+  Check(S.Start(PythonPath, AdapterPath), 'source-details fixture starts');
+  O := RequestAt(T, 0);
+  try RequestID := O.Get('request_id', ''); finally O.Free; end;
+  T.Push(Format('{"type":"status","protocol_version":1,"request_id":"%s","auth_state":"%s","session_scope":"process_memory_only","busy":false,"capabilities":{"details":%s,"download":false}}'#10,
+    [RequestID, AuthState, DetailsCapability]));
+  S.Poll;
+end;
+
+function SeedCurrentResults(T: TFakeTransport; S: TCatalogSession): string;
+var O: TJSONObject;
+begin
+  Check(S.Search('fixture artist', 'fixture title'), 'source-details fixture search begins');
+  O := RequestAt(T, T.Requests.Count - 1);
+  try Result := O.Get('request_id', ''); finally O.Free; end;
+  T.Push(Format('{"type":"results","protocol_version":1,"request_id":"%s","songs":[{"id":2147483648,"artist":"Beyonc\u00e9","title":"Part: 2","language":"Fran\u00e7ais"},{"id":9223372036854775807,"artist":"Other","title":"Maximum ID"}]}'#10, [Result]));
+  T.Push(Format('{"type":"idle","protocol_version":1,"request_id":"%s"}'#10, [Result]));
+  S.Poll;
+  Check((S.ResultCount = 2) and (S.Results.Count = 2) and not S.Busy,
+    'typed and display result collections publish together');
+end;
+
+function StartSelectedDetails(T: TFakeTransport; S: TCatalogSession): string;
+var O: TJSONObject;
+begin
+  Check(S.Details(S.ResultItems[0].SongID), 'current typed result starts source-details request');
+  O := RequestAt(T, T.Requests.Count - 1);
+  try Result := O.Get('request_id', ''); finally O.Free; end;
+end;
+
+procedure TestDeadSessionActionGates(const PythonPath, AdapterPath: string);
+var T: TFakeTransport; S: TCatalogSession; BeforeCount: integer;
+begin
+  StartReadyFake(PythonPath, AdapterPath, T, S);
+  try
+    BeforeCount := T.Requests.Count;
+    T.Active := false; // No Poll: an operation must check the live helper itself.
+    Check(not S.Search('fixture', 'fixture'), 'dead helper rejects search before another Poll');
+    Check(T.Requests.Count = BeforeCount, 'dead helper receives no new protocol request');
+    Check(not S.Authenticated, 'dead helper action gate clears stale authentication');
+  finally S.Free; T.Free; end;
+  StartReadyFake(PythonPath, AdapterPath, T, S, 'signed_out');
+  try
+    BeforeCount := T.Requests.Count; T.Active := false;
+    Check(not S.Login('fixture-user', 'fixture-password'), 'dead signed-out helper rejects sign-in before another Poll');
+    Check(T.Requests.Count = BeforeCount, 'dead signed-out helper receives no sign-in request or credentials');
+  finally S.Free; T.Free; end;
+end;
+
+procedure TestResultSelectionBounds(const PythonPath, AdapterPath: string);
+const Counts: array[0..2] of integer = (0, 30, 31);
+var T: TFakeTransport; S: TCatalogSession; O: TJSONObject;
+  CaseIndex, I, ExpectedCount: integer; SearchID, Rows: string;
+begin
+  for CaseIndex := Low(Counts) to High(Counts) do
+  begin
+    StartReadyFake(PythonPath, AdapterPath, T, S);
+    try
+      Check(S.Search('fixture', 'fixture'), 'bounded selection fixture starts search');
+      O := RequestAt(T, T.Requests.Count - 1);
+      try SearchID := O.Get('request_id', ''); finally O.Free; end;
+      Rows := '';
+      for I := 1 to Counts[CaseIndex] do
+      begin
+        if I > 1 then Rows := Rows + ',';
+        Rows := Rows + Format('{"id":%d,"artist":"fixture","title":"row"}', [I]);
+      end;
+      T.Push(Format('{"type":"results","protocol_version":1,"request_id":"%s","songs":[%s]}'#10, [SearchID, Rows]));
+      T.Push(Format('{"type":"idle","protocol_version":1,"request_id":"%s"}'#10, [SearchID])); S.Poll;
+      ExpectedCount := Counts[CaseIndex]; if ExpectedCount > 30 then ExpectedCount := 30;
+      Check((S.ResultCount = ExpectedCount) and (S.Results.Count = ExpectedCount) and
+        (S.ErrorCode = '') and not S.Busy, 'zero/30/31 rows preserve bounded first-30 display and typed API');
+      if ExpectedCount > 0 then
+        Check(S.ResultItems[ExpectedCount - 1].SongID = ExpectedCount, 'last retained typed ID matches display row boundary');
+    finally S.Free; T.Free; end;
+  end;
+  StartReadyFake(PythonPath, AdapterPath, T, S);
+  try
+    SeedCurrentResults(T, S);
+    Check(S.Search('replacement', 'fixture'), 'atomic result replacement starts search');
+    O := RequestAt(T, T.Requests.Count - 1);
+    try SearchID := O.Get('request_id', ''); finally O.Free; end;
+    T.Push(Format('{"type":"results","protocol_version":1,"request_id":"%s","songs":[{"id":1,"artist":"valid","title":"first"},{"id":2,"artist":false,"title":"invalid"}]}'#10, [SearchID])); S.Poll;
+    Check((S.ErrorCode = 'protocol_error') and (S.ResultCount = 0) and (S.Results.Count = 0),
+      'malformed later row publishes neither partial typed metadata nor display rows');
+  finally S.Free; T.Free; end;
+end;
+
+procedure TestSourceDetails(const PythonPath, AdapterPath: string);
+const Link = 'https://www.youtube.com/watch?v=ABCDEFGHIJK';
+var T: TFakeTransport; S: TCatalogSession; O: TJSONObject;
+  SearchID, DetailID: string; BeforeCount: integer;
+begin
+  StartReadyFake(PythonPath, AdapterPath, T, S);
+  try
+    Check(S.DetailsSupported and not S.DownloadsEnabled, 'source details support does not enable downloads');
+    SearchID := SeedCurrentResults(T, S);
+    Check((S.ResultItems[0].SongID = Int64(2147483648)) and
+      (S.ResultItems[1].SongID = High(Int64)), 'typed catalog IDs preserve the full positive Int64 range');
+    Check((Pos('Beyonc', S.ResultItems[0].Artist) = 1) and
+      (Length(S.ResultItems[0].Artist) = 8) and (S.ResultItems[0].Title = 'Part: 2'),
+      'typed metadata preserves UTF-8 and colons independently of display formatting');
+    Check(Pos(RawByteString(S.ResultItems[0].Artist), RawByteString(S.Results[0])) > 0,
+      'display rows preserve the exact UTF-8 artist bytes from typed metadata');
+    S.Results[0] := 'truncated display with no ID';
+    DetailID := StartSelectedDetails(T, S);
+    O := RequestAt(T, T.Requests.Count - 1);
+    try
+      Check((O.Get('op', '') = 'details') and (O.Get('protocol_version', 0) = 1), 'details uses existing v1 operation');
+      Check((O.Find('id').JSONType = jtNumber) and not (O.Find('id') is TJSONFloatNumber) and
+        (O.Find('id').AsInt64 = Int64(2147483648)), 'selected ID is a JSON integer, never a string');
+      Check((O.Count = 4) and (O.Find('url') = nil) and (O.Find('root') = nil) and
+        (O.Find('password') = nil), 'details sends only version, correlation, operation and numeric ID');
+      Check(DetailID <> SearchID, 'details has its own request correlation');
+    finally O.Free; end;
+    BeforeCount := T.Requests.Count;
+    Check(not S.Details(S.ResultItems[1].SongID), 'repeated activation is blocked while details is pending');
+    Check(T.Requests.Count = BeforeCount, 'repeated activation sends no second request');
+    T.Push('{"type":"details","protocol_version":1,"request_id":"stale-details","id":42,"links":["https://untrusted.invalid/"]}'#10);
+    S.Poll;
+    Check(S.Busy and (S.DetailSongID = 0) and (S.DetailLinks.Count = 0), 'stale details do not change the selected result');
+    T.Push(Format('{"type":"details","protocol_version":1,"request_id":"%s","id":2147483648,"links":["%s"]}'#10, [DetailID, Link]));
+    S.Poll;
+    Check(S.Busy and (S.DetailSongID = Int64(2147483648)) and (S.DetailLinks.Count = 1) and
+      (S.DetailLinks[0] = Link), 'valid correlated source details publish without completing before idle');
+    T.Push(Format('{"type":"idle","protocol_version":1,"request_id":"%s"}'#10, [DetailID]));
+    S.Poll;
+    Check(not S.Busy and (S.ErrorCode = '') and not S.DownloadsEnabled, 'details completion stays download-disabled');
+    Check(S.Details(S.ResultItems[1].SongID), 'maximum Int64 result can request details');
+    O := RequestAt(T, T.Requests.Count - 1);
+    try
+      DetailID := O.Get('request_id', '');
+      Check(O.Find('id').AsInt64 = High(Int64), 'maximum Int64 request is not narrowed on serialization');
+    finally O.Free; end;
+    T.Push(Format('{"type":"details","protocol_version":1,"request_id":"%s","id":9223372036854775807,"links":[]}'#10, [DetailID]));
+    T.Push(Format('{"type":"idle","protocol_version":1,"request_id":"%s"}'#10, [DetailID]));
+    S.Poll;
+    Check((S.DetailSongID = High(Int64)) and (S.DetailLinks.Count = 0) and not S.Busy,
+      'empty media-source list is valid, without reusing a previous result link');
+    Check(S.Search('new', 'query'), 'new search begins after source details');
+    Check((S.DetailSongID = 0) and (S.DetailLinks.Count = 0) and (S.ResultCount = 0),
+      'new search clears prior selection data and source details');
+  finally S.Free; T.Free; end;
+end;
+
+procedure TestSourceDetailsGates(const PythonPath, AdapterPath: string);
+var T: TFakeTransport; S: TCatalogSession; BeforeCount: integer;
+begin
+  T := TFakeTransport.Create; S := TCatalogSession.Create(T, false);
+  try
+    Check(not S.Details(42) and (T.Requests.Count = 0), 'unstarted session cannot request details');
+    Check(S.Start(PythonPath, AdapterPath), 'pending-status gate fixture starts');
+    BeforeCount := T.Requests.Count;
+    Check(not S.Details(42) and (T.Requests.Count = BeforeCount), 'details cannot race ahead of initial status');
+  finally S.Free; T.Free; end;
+  StartReadyFake(PythonPath, AdapterPath, T, S, 'signed_out');
+  try
+    BeforeCount := T.Requests.Count;
+    Check(not S.Details(42) and (T.Requests.Count = BeforeCount), 'signed-out details sends no request');
+  finally S.Free; T.Free; end;
+  StartReadyFake(PythonPath, AdapterPath, T, S, 'signed_in', 'false');
+  try
+    SeedCurrentResults(T, S); BeforeCount := T.Requests.Count;
+    Check(not S.Details(S.ResultItems[0].SongID) and (T.Requests.Count = BeforeCount),
+      'adapter must explicitly advertise source-details support');
+  finally S.Free; T.Free; end;
+  StartReadyFake(PythonPath, AdapterPath, T, S, 'signed_in', '"true"');
+  try
+    Check((S.ErrorCode = 'protocol_error') and T.Terminated and not S.DetailsSupported,
+      'wrong-typed details capability fails closed');
+  finally S.Free; T.Free; end;
+  StartReadyFake(PythonPath, AdapterPath, T, S);
+  try
+    SeedCurrentResults(T, S); BeforeCount := T.Requests.Count;
+    Check(not S.Details(0) and not S.Details(-1) and not S.Details(42), 'only a positive ID in current results can be selected');
+    Check(T.Requests.Count = BeforeCount, 'invalid and absent IDs produce no protocol request');
+    T.Active := false;
+    Check(not S.Details(Int64(2147483648)) and not S.Authenticated and
+      (T.Requests.Count = BeforeCount), 'dead helper cannot accept details before Poll observes its exit');
+  finally S.Free; T.Free; end;
+  StartReadyFake(PythonPath, AdapterPath, T, S);
+  try
+    SeedCurrentResults(T, S); S.ForceTerminate; BeforeCount := T.Requests.Count;
+    Check(not S.Details(Int64(2147483648)) and (T.Requests.Count = BeforeCount), 'terminated session cannot request details');
+    Check((S.ResultCount = 0) and (S.DetailSongID = 0), 'termination clears typed selection data');
+  finally S.Free; T.Free; end;
+end;
+
+procedure TestInvalidSourceDetails(const PythonPath, AdapterPath: string);
+const Frames: array[0..17] of string = (
+  '{"type":"details","protocol_version":1,"request_id":"%s","id":"2147483648","links":[]}',
+  '{"type":"details","protocol_version":1,"request_id":"%s","id":2147483648.0,"links":[]}',
+  '{"type":"details","protocol_version":1,"request_id":"%s","id":true,"links":[]}',
+  '{"type":"details","protocol_version":1,"request_id":"%s","id":-1,"links":[]}',
+  '{"type":"details","protocol_version":1,"request_id":"%s","id":42,"links":[]}',
+  '{"type":"details","protocol_version":1,"request_id":"%s","id":9223372036854775808,"links":[]}',
+  '{"type":"details","protocol_version":1,"request_id":"%s","links":[]}',
+  '{"type":"details","protocol_version":1,"request_id":"%s","id":2147483648}',
+  '{"type":"details","protocol_version":1,"request_id":"%s","id":2147483648,"links":{}}',
+  '{"type":"details","protocol_version":1,"request_id":"%s","id":2147483648,"links":[null]}',
+  '{"type":"details","protocol_version":1,"request_id":"%s","id":2147483648,"links":[4]}',
+  '{"type":"details","protocol_version":1,"request_id":"%s","id":2147483648,"links":["http://www.youtube.com/watch?v=ABCDEFGHIJK"]}',
+  '{"type":"details","protocol_version":1,"request_id":"%s","id":2147483648,"links":["https://untrusted.invalid/"]}',
+  '{"type":"details","protocol_version":1,"request_id":"%s","id":2147483648,"links":["https://www.youtube.com/watch?v=ABCDEFGHIJKextra"]}',
+  '{"type":"details","protocol_version":1,"request_id":"%s","id":2147483648,"links":["https://www.youtube.com/watch?v=ABCDEFGHIJK","bad"]}',
+  '{"type":"idle","protocol_version":1,"request_id":"%s"}',
+  '{"type":"details","protocol_version":2,"request_id":"%s","id":2147483648,"links":[]}',
+  '{"type":"results","protocol_version":1,"request_id":"%s","songs":[]}'
+);
+var I, J, BeforeCount: integer; T: TFakeTransport; S: TCatalogSession;
+  DetailID, LinkArray: string;
+begin
+  for I := Low(Frames) to High(Frames) do
+  begin
+    StartReadyFake(PythonPath, AdapterPath, T, S);
+    try
+      SeedCurrentResults(T, S); DetailID := StartSelectedDetails(T, S);
+      T.Push(UTF8String(Format(Frames[I] + #10, [DetailID]))); S.Poll;
+      Check((S.ErrorCode = 'protocol_error') and T.Terminated and not S.Busy and not S.Authenticated,
+        'wrong source-detail ID/type/shape/operation/version fails closed, case ' + IntToStr(I));
+      Check((S.DetailSongID = 0) and (S.DetailLinks.Count = 0) and (S.ResultCount = 0),
+        'invalid detail frame never publishes partial source or selection data');
+      BeforeCount := T.Requests.Count;
+      Check(not S.Details(Int64(2147483648)) and (T.Requests.Count = BeforeCount), 'protocol-failed session cannot be reused');
+    finally S.Free; T.Free; end;
+  end;
+  StartReadyFake(PythonPath, AdapterPath, T, S);
+  try
+    SeedCurrentResults(T, S); DetailID := StartSelectedDetails(T, S);
+    LinkArray := '';
+    for J := 1 to 31 do
+    begin
+      if J > 1 then LinkArray := LinkArray + ',';
+      LinkArray := LinkArray + '"https://www.youtube.com/watch?v=ABCDEFGHIJK"';
+    end;
+    T.Push(Format('{"type":"details","protocol_version":1,"request_id":"%s","id":2147483648,"links":[%s]}'#10, [DetailID, LinkArray]));
+    S.Poll;
+    Check((S.ErrorCode = 'protocol_error') and (S.DetailLinks.Count = 0), 'source-link collection is explicitly bounded');
+  finally S.Free; T.Free; end;
+  StartReadyFake(PythonPath, AdapterPath, T, S);
+  try
+    SeedCurrentResults(T, S); DetailID := StartSelectedDetails(T, S);
+    T.Push(Format('{"type":"details","protocol_version":1,"request_id":"%s","id":2147483648,"links":[],"padding":"%s"}'#10, [DetailID, StringOfChar('x', 65537)]));
+    for J := 1 to 6 do S.Poll;
+    Check((S.ErrorCode = 'protocol_error') and T.Terminated and (S.DetailSongID = 0), 'oversized source-detail frame cannot publish data');
+  finally S.Free; T.Free; end;
+  StartReadyFake(PythonPath, AdapterPath, T, S);
+  try
+    SeedCurrentResults(T, S); DetailID := StartSelectedDetails(T, S);
+    for J := 1 to 2 do
+      T.Push(Format('{"type":"details","protocol_version":1,"request_id":"%s","id":2147483648,"links":[]}'#10, [DetailID]));
+    S.Poll;
+    Check((S.ErrorCode = 'protocol_error') and (S.DetailSongID = 0), 'duplicate details payload fails closed before idle');
+  finally S.Free; T.Free; end;
+end;
+
+procedure TestSourceDetailsLifecycle(const PythonPath, AdapterPath: string);
+var T: TFakeTransport; S: TCatalogSession; O: TJSONObject;
+  DetailID, QuitID: string; BeforeCount: integer;
+begin
+  StartReadyFake(PythonPath, AdapterPath, T, S);
+  try
+    SeedCurrentResults(T, S); DetailID := StartSelectedDetails(T, S);
+    T.Push(Format('{"type":"error","protocol_version":1,"request_id":"%s","code":"authentication_required"}'#10, [DetailID])); S.Poll;
+    Check(not S.Busy and not S.Authenticated and (S.DetailSongID = 0) and
+      (S.ErrorCode = 'authentication_required'), 'expired details session clears authentication and pending data');
+    BeforeCount := T.Requests.Count;
+    Check(not S.Details(Int64(2147483648)) and (T.Requests.Count = BeforeCount), 'expired session requires new explicit sign-in');
+  finally S.Free; T.Free; end;
+  StartReadyFake(PythonPath, AdapterPath, T, S);
+  try
+    SeedCurrentResults(T, S); StartSelectedDetails(T, S); S.PollAt(High(QWord));
+    Check((S.ErrorCode = 'request_timeout') and T.Terminated and not S.Busy and
+      not S.Authenticated and (S.DetailSongID = 0), 'details deadline terminates only the owned helper and clears state');
+  finally S.Free; T.Free; end;
+  StartReadyFake(PythonPath, AdapterPath, T, S);
+  try
+    SeedCurrentResults(T, S); StartSelectedDetails(T, S); T.Active := false; S.Poll;
+    Check((S.ErrorCode = 'helper_exited') and not S.Busy and not S.Authenticated,
+      'helper exit during details does not leave the session busy');
+  finally S.Free; T.Free; end;
+  StartReadyFake(PythonPath, AdapterPath, T, S);
+  try
+    SeedCurrentResults(T, S); StartSelectedDetails(T, S); T.Failure := 'fixture transport failure'; S.Poll;
+    Check((S.ErrorCode = 'transport_failed') and T.Terminated and (S.DetailSongID = 0),
+      'details transport failure clears pending and visible source data');
+  finally S.Free; T.Free; end;
+  StartReadyFake(PythonPath, AdapterPath, T, S);
+  try
+    SeedCurrentResults(T, S); T.FailWrites := true;
+    Check(not S.Details(Int64(2147483648)) and (S.ErrorCode = 'request_write_failed') and
+      T.Terminated and not S.Busy and not S.Authenticated and (S.DetailSongID = 0),
+      'details write failure terminates the helper and clears pending authentication/data');
+  finally S.Free; T.Free; end;
+  StartReadyFake(PythonPath, AdapterPath, T, S);
+  try
+    SeedCurrentResults(T, S); DetailID := StartSelectedDetails(T, S); S.Close;
+    O := RequestAt(T, T.Requests.Count - 1);
+    try QuitID := O.Get('request_id', ''); finally O.Free; end;
+    Check(QuitID <> DetailID, 'closing details sends an independently correlated quit');
+    BeforeCount := T.Requests.Count;
+    Check(not S.Details(Int64(2147483648)) and (T.Requests.Count = BeforeCount), 'closing session rejects new source requests');
+    T.Push(Format('{"type":"details","protocol_version":1,"request_id":"%s","id":2147483648,"links":[]}'#10, [DetailID]));
+    T.Push(Format('{"type":"control_ack","protocol_version":1,"request_id":"%s","command":"quit","accepted":true,"target_request_id":"%s"}'#10, [QuitID, DetailID]));
+    S.Poll;
+    Check((S.ErrorCode = '') and (Pos('acknowledged', S.Status) > 0) and (S.DetailSongID = 0),
+      'late details cannot republish after close; quit acknowledgement matches active details target');
+    S.ForceTerminate;
+    Check(T.Terminated and (S.ResultCount = 0) and (S.DetailLinks.Count = 0), 'hide/terminate clears source and selection state');
+  finally S.Free; T.Free; end;
+end;
+
 var PythonPath, AdapterPath: string;
 begin
+  if (ParamCount = 3) and (ParamStr(3) = '--source-details-regression') then
+  begin
+    PythonPath := ParamStr(1); AdapterPath := ParamStr(2);
+    TestDeadSessionActionGates(PythonPath, AdapterPath);
+    TestResultSelectionBounds(PythonPath, AdapterPath);
+    TestSourceDetails(PythonPath, AdapterPath);
+    TestSourceDetailsGates(PythonPath, AdapterPath);
+    TestInvalidSourceDetails(PythonPath, AdapterPath);
+    TestSourceDetailsLifecycle(PythonPath, AdapterPath);
+    WriteLn('PASS: ', Assertions, ' focused catalog source-details assertions');
+    Halt(0);
+  end;
   if (ParamCount = 3) and (ParamStr(3) = '--ordinal-regression') then
   begin
     PythonPath := ParamStr(1);
@@ -648,6 +981,12 @@ begin
   PythonPath := ParamStr(1);
   AdapterPath := ParamStr(2);
   TestFakeTransport(PythonPath, AdapterPath);
+  TestDeadSessionActionGates(PythonPath, AdapterPath);
+  TestResultSelectionBounds(PythonPath, AdapterPath);
+  TestSourceDetails(PythonPath, AdapterPath);
+  TestSourceDetailsGates(PythonPath, AdapterPath);
+  TestInvalidSourceDetails(PythonPath, AdapterPath);
+  TestSourceDetailsLifecycle(PythonPath, AdapterPath);
   TestOversized(PythonPath, AdapterPath);
   TestCloseDuringStatus(PythonPath, AdapterPath);
   TestCloseActiveSearch(PythonPath, AdapterPath);

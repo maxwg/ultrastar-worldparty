@@ -7,6 +7,12 @@ interface
 uses Classes, SysUtils;
 
 type
+  TCatalogSearchResult = record
+    SongID: Int64;
+    Artist, Title, Language: UTF8String;
+  end;
+  TCatalogSearchResults = array of TCatalogSearchResult;
+
   TCatalogTransport = class
   public
     procedure Start(const PythonPath, AdapterPath: string); virtual; abstract;
@@ -54,14 +60,25 @@ type
     FBusy: boolean;
     FClosing: boolean;
     FAuthenticated: boolean;
+    FSessionReady: boolean;
+    FDetailsCapability: boolean;
     FDownloadCapability: boolean;
     FStatus: UTF8String;
     FErrorCode: string;
     FResults: TStringList;
+    FResultItems: TCatalogSearchResults;
+    FDetailLinks: TStringList;
+    FDetailSongID, FPendingSongID: Int64;
+    FDetailReceived: boolean;
     FPendingDeadline: QWord;
     FCloseDeadline: QWord;
     function NewRequestID: string;
-    function SendRequest(const Op: string; Fields: TStrings): string;
+    function SendRequest(const Op: string; Fields: TStrings; SongID: Int64 = 0): string;
+    function CanStartRequest: boolean;
+    function GetResultCount: integer;
+    function GetResultItem(Index: integer): TCatalogSearchResult;
+    procedure ClearResults;
+    procedure ClearDetails;
     procedure ReceiveLine(const Line: UTF8String);
     procedure FailProtocol(const MessageText: string);
     procedure FinishPending(const MessageText: string; const Code: string);
@@ -72,6 +89,7 @@ type
     function Start(const PythonPath, AdapterPath: string): boolean;
     function Login(const Username, Password: UTF8String): boolean;
     function Search(const Artist, Title: UTF8String): boolean;
+    function Details(SongID: Int64): boolean;
     procedure Close;
     procedure ForceTerminate;
     procedure Poll;
@@ -84,6 +102,11 @@ type
     property Closing: boolean read FClosing;
     property HelperRunning: boolean read GetHelperRunning;
     property Results: TStringList read FResults;
+    property ResultCount: integer read GetResultCount;
+    property ResultItems[Index: integer]: TCatalogSearchResult read GetResultItem;
+    property DetailsSupported: boolean read FDetailsCapability;
+    property DetailSongID: Int64 read FDetailSongID;
+    property DetailLinks: TStringList read FDetailLinks;
   end;
 
 function IsAbsoluteCatalogPath(const Value: string): boolean;
@@ -168,6 +191,7 @@ const
   CMaxFrame = 65536;
   CMaxOutbound = 65536;
   CMaxResults = 30;
+  CMaxSourceLinks = 30;
   CStatusTimeoutMs = 10000;
   COperationTimeoutMs = 60000;
   CCloseTimeoutMs = 2000;
@@ -192,12 +216,14 @@ begin
             FileExists(PythonPath) and FileExists(AdapterPath);
 end;
 
-function JSONString(Obj: TJSONObject; const Key: string; out Value: string): boolean;
+function JSONString(Obj: TJSONObject; const Key: string; out Value: UTF8String): boolean;
 var D: TJSONData;
 begin
   Value := '';
   D := Obj.Find(Key);
   Result := Assigned(D) and (D.JSONType = jtString);
+  // fpjson returns UTF8String. Keep that type at the boundary instead of
+  // implicitly converting escaped non-ASCII values through an ANSI string.
   if Result then Value := D.AsString;
 end;
 
@@ -222,13 +248,27 @@ end;
 
 function CloseTargetMatches(Obj: TJSONObject; const Expected: string): boolean;
 var D: TJSONData;
-    Actual: string;
+    Actual: UTF8String;
 begin
   D := Obj.Find('target_request_id');
   if not Assigned(D) then Exit(false);
   if D.JSONType = jtNull then Exit(true); // operation may finish before quit is read
   Result := (D.JSONType = jtString) and (Expected <> '') and
             JSONString(Obj, 'target_request_id', Actual) and (Actual = Expected);
+end;
+
+function IsCatalogSourceLink(const Value: string): boolean;
+const Prefix = 'https://www.youtube.com/watch?v=';
+var I: integer;
+begin
+  // song_catalog.media_links normalizes watch/embed/youtu.be sources to this
+  // exact URL form. Never turn arbitrary helper strings into actionable links.
+  Result := false;
+  if (Length(Value) <> Length(Prefix) + 11) or
+     (Copy(Value, 1, Length(Prefix)) <> Prefix) then Exit;
+  for I := Length(Prefix) + 1 to Length(Value) do
+    if not (Value[I] in ['A'..'Z', 'a'..'z', '0'..'9', '_', '-']) then Exit;
+  Result := true;
 end;
 
 { TCatalogProcessTransport }
@@ -560,6 +600,7 @@ begin
   FTransport := Transport;
   FOwnsTransport := OwnsTransport;
   FResults := TStringList.Create;
+  FDetailLinks := TStringList.Create;
   FStatus := 'Catalog setup unavailable.';
 end;
 
@@ -572,8 +613,50 @@ destructor TCatalogSession.Destroy;
 begin
   if FTransport.Running then FTransport.TerminateOwned;
   if FOwnsTransport then FTransport.Free;
+  FDetailLinks.Free;
   FResults.Free;
   inherited Destroy;
+end;
+
+function TCatalogSession.GetResultCount: integer;
+begin
+  Result := Length(FResultItems);
+end;
+
+function TCatalogSession.GetResultItem(Index: integer): TCatalogSearchResult;
+begin
+  if (Index < 0) or (Index >= Length(FResultItems)) then
+    raise EListError.Create('Catalog result index is out of range.');
+  Result := FResultItems[Index];
+end;
+
+procedure TCatalogSession.ClearResults;
+begin
+  FResults.Clear;
+  SetLength(FResultItems, 0);
+end;
+
+procedure TCatalogSession.ClearDetails;
+begin
+  FDetailSongID := 0;
+  FDetailLinks.Clear;
+end;
+
+function TCatalogSession.CanStartRequest: boolean;
+begin
+  Result := false;
+  if FBusy or FClosing then Exit;
+  if not FSessionReady or not FTransport.Running or
+     (FTransport.FailureMessage <> '') then
+  begin
+    FAuthenticated := false;
+    FSessionReady := false;
+    FDetailsCapability := false;
+    ClearDetails;
+    FStatus := 'Catalog session is unavailable. Reopen catalog search.';
+    Exit;
+  end;
+  Result := true;
 end;
 
 function TCatalogSession.NewRequestID: string;
@@ -582,7 +665,7 @@ begin
   Result := 'worldparty-' + IntToStr(FNextID);
 end;
 
-function TCatalogSession.SendRequest(const Op: string; Fields: TStrings): string;
+function TCatalogSession.SendRequest(const Op: string; Fields: TStrings; SongID: Int64): string;
 var
   O: TJSONObject;
   I: integer;
@@ -595,6 +678,7 @@ begin
     Result := NewRequestID;
     O.Add('request_id', Result);
     O.Add('op', Op);
+    if SongID > 0 then O.Add('id', SongID);
     if Assigned(Fields) then
       for I := 0 to Fields.Count - 1 do
       begin
@@ -610,6 +694,13 @@ end;
 function TCatalogSession.Start(const PythonPath, AdapterPath: string): boolean;
 begin
   Result := false;
+  if FBusy or FClosing or FTransport.Running then Exit;
+  FSessionReady := false;
+  FDetailsCapability := false;
+  FAuthenticated := false;
+  FErrorCode := '';
+  ClearResults;
+  ClearDetails;
   if not CatalogConfigurationReady(PythonPath, AdapterPath) then
   begin FStatus := 'Catalog search is not configured.'; Exit; end;
   try
@@ -634,13 +725,14 @@ function TCatalogSession.Login(const Username, Password: UTF8String): boolean;
 var Fields: TStringList;
 begin
   Result := false;
-  if FBusy or FClosing then Exit;
+  if not CanStartRequest then Exit;
   if (Username = '') or (Password = '') then
   begin FStatus := 'Enter your existing catalog username and password.'; Exit; end;
   Fields := TStringList.Create;
   try
     Fields.Values['user'] := string(Username);
     Fields.Values['password'] := string(Password);
+    ClearDetails;
     FPendingOp := 'login'; FBusy := true;
     FAuthenticated := false;
     FStatus := 'Signing in for this process only…';
@@ -663,14 +755,15 @@ function TCatalogSession.Search(const Artist, Title: UTF8String): boolean;
 var Fields: TStringList;
 begin
   Result := false;
-  if FBusy or FClosing then Exit;
+  if not CanStartRequest then Exit;
   if not FAuthenticated then
   begin FStatus := 'Sign in to the catalog in this session before searching.'; Exit; end;
   Fields := TStringList.Create;
   try
     Fields.Values['artist'] := string(Artist);
     Fields.Values['title'] := string(Title);
-    FResults.Clear;
+    ClearResults;
+    ClearDetails;
     FPendingOp := 'search'; FBusy := true;
     FStatus := 'Searching catalog…';
     FErrorCode := '';
@@ -687,11 +780,51 @@ begin
   end;
 end;
 
+function TCatalogSession.Details(SongID: Int64): boolean;
+var I: integer; Found: boolean;
+begin
+  Result := false;
+  if not CanStartRequest then Exit;
+  if not FAuthenticated then
+  begin FStatus := 'Sign in to the catalog before viewing source details.'; Exit; end;
+  if not FDetailsCapability then
+  begin FStatus := 'Catalog source details are unavailable.'; Exit; end;
+  Found := false;
+  if SongID > 0 then
+    for I := 0 to High(FResultItems) do
+      if FResultItems[I].SongID = SongID then
+      begin Found := true; Break; end;
+  if not Found then
+  begin FStatus := 'Select a current catalog result before viewing source details.'; Exit; end;
+  ClearDetails;
+  FPendingSongID := SongID;
+  FDetailReceived := false;
+  FPendingOp := 'details';
+  FBusy := true;
+  FStatus := 'Loading catalog source details…';
+  FErrorCode := '';
+  try
+    // v1 requires an integer ID, not the text fields used by login/search.
+    FPendingID := SendRequest('details', nil, SongID);
+    FPendingDeadline := GetTickCount64 + COperationTimeoutMs;
+    Result := true;
+  except
+    FinishPending('Could not send catalog source details request.', 'request_write_failed');
+    FTransport.TerminateOwned;
+  end;
+end;
+
 procedure TCatalogSession.Close;
 var O: TJSONObject;
 begin
   if FClosing then Exit;
   FClosing := true;
+  FSessionReady := false;
+  FDetailsCapability := false;
+  ClearDetails;
+  ClearResults;
+  FPendingSongID := 0;
+  FDetailReceived := false;
   if (FPendingOp = 'login') or (FPendingOp = 'search') or
      (FPendingOp = 'details') or (FPendingOp = 'download') then
     FClosingTarget := FPendingID
@@ -725,6 +858,12 @@ end;
 
 procedure TCatalogSession.ForceTerminate;
 begin
+  FSessionReady := false;
+  FDetailsCapability := false;
+  ClearDetails;
+  ClearResults;
+  FPendingSongID := 0;
+  FDetailReceived := false;
   if FTransport.Running then FTransport.TerminateOwned;
   FAuthenticated := false;
   FBusy := false;
@@ -740,15 +879,28 @@ begin
   FPendingID := '';
   FPendingOp := '';
   FPendingDeadline := 0;
+  FPendingSongID := 0;
+  FDetailReceived := false;
+  if Code <> '' then ClearDetails;
   FStatus := UTF8String(MessageText);
   FErrorCode := Code;
   if (Code = 'request_timeout') or (Code = 'transport_failed') or
      (Code = 'helper_exited') or (Code = 'request_write_failed') then
+  begin
     FAuthenticated := false;
+    FSessionReady := false;
+    FDetailsCapability := false;
+  end;
 end;
 
 procedure TCatalogSession.FailProtocol(const MessageText: string);
 begin
+  FSessionReady := false;
+  FDetailsCapability := false;
+  ClearDetails;
+  ClearResults;
+  FPendingSongID := 0;
+  FDetailReceived := false;
   FAuthenticated := false;
   FDownloadCapability := false;
   FBusy := false;
@@ -766,11 +918,14 @@ procedure TCatalogSession.ReceiveLine(const Line: UTF8String);
 var
   Data: TJSONData;
   Obj, Caps, Song: TJSONObject;
-  Songs: TJSONArray;
-  EventType, RequestID, Code, State, Scope, Artist, Title, Lang, Row, Command: string;
+  Songs, Links: TJSONArray;
+  ParsedResults: TCatalogSearchResults;
+  ParsedRows, ParsedLinks: TStringList;
+  EventType, RequestID, Code, State, Scope, Artist, Title, Lang, Row, Command, Link: UTF8String;
   Version: Int64;
   Download, Accepted, LoginOK: boolean;
   I: Integer; // TJSONArray.Count/Items use LongInt indices in FPC 3.2.2.
+  ResultLimit: integer;
   SongID: Int64;
 begin
   try
@@ -807,6 +962,7 @@ begin
     if ((EventType = 'status') and (FPendingOp <> 'status')) or
        ((EventType = 'login') and (FPendingOp <> 'login')) or
        ((EventType = 'results') and (FPendingOp <> 'search')) or
+       ((EventType = 'details') and (FPendingOp <> 'details')) or
        ((EventType = 'idle') and not ((FPendingOp = 'login') or
          (FPendingOp = 'search') or (FPendingOp = 'details') or
          (FPendingOp = 'download'))) then
@@ -825,7 +981,12 @@ begin
       Caps := TJSONObject(Obj.Find('capabilities'));
       if not JSONBoolean(Caps, 'download', Download) or Download then
       begin FailProtocol('Catalog helper unexpectedly enabled downloads.'); Exit; end;
+      FDetailsCapability := false;
+      if Assigned(Caps.Find('details')) and
+         not JSONBoolean(Caps, 'details', FDetailsCapability) then
+      begin FailProtocol('Catalog helper returned an invalid details capability.'); Exit; end;
       FAuthenticated := State = 'signed_in';
+      FSessionReady := true;
       FDownloadCapability := false;
       if FAuthenticated then FStatus := 'Catalog session ready. Session exists only in memory.'
       else FStatus := 'Sign-in required. Session exists only in memory.';
@@ -847,28 +1008,67 @@ begin
       if not (Obj.Find('songs') is TJSONArray) then
       begin FailProtocol('Catalog helper returned invalid metadata results.'); Exit; end;
       Songs := TJSONArray(Obj.Find('songs'));
-      FResults.Clear;
-      for I := 0 to Songs.Count - 1 do
-      begin
-        if I >= CMaxResults then Break;
-        if not (Songs.Items[I] is TJSONObject) then
-        begin FailProtocol('Catalog helper returned an invalid metadata row.'); Exit; end;
-        Song := TJSONObject(Songs.Items[I]);
-        if not JSONInteger(Song, 'id', SongID) or (SongID <= 0) or
-           not JSONString(Song, 'artist', Artist) or
-           not JSONString(Song, 'title', Title) then
-        begin FailProtocol('Catalog helper returned an invalid metadata row.'); Exit; end;
-        Lang := '';
-        if Assigned(Song.Find('language')) then
+      // Preserve the existing first-30 display contract. The service's limit=6
+      // request is advisory; its HTML parser does not enforce a response count.
+      ResultLimit := Songs.Count;
+      if ResultLimit > CMaxResults then ResultLimit := CMaxResults;
+      ParsedRows := TStringList.Create;
+      try
+        SetLength(ParsedResults, ResultLimit);
+        for I := 0 to ResultLimit - 1 do
         begin
-          if not JSONString(Song, 'language', Lang) then
+          if not (Songs.Items[I] is TJSONObject) then
           begin FailProtocol('Catalog helper returned an invalid metadata row.'); Exit; end;
+          Song := TJSONObject(Songs.Items[I]);
+          if not JSONInteger(Song, 'id', SongID) or (SongID <= 0) or
+             not JSONString(Song, 'artist', Artist) or
+             not JSONString(Song, 'title', Title) then
+          begin FailProtocol('Catalog helper returned an invalid metadata row.'); Exit; end;
+          Lang := '';
+          if Assigned(Song.Find('language')) and not JSONString(Song, 'language', Lang) then
+          begin FailProtocol('Catalog helper returned an invalid metadata row.'); Exit; end;
+          ParsedResults[I].SongID := SongID;
+          ParsedResults[I].Artist := UTF8String(Artist);
+          ParsedResults[I].Title := UTF8String(Title);
+          ParsedResults[I].Language := UTF8String(Lang);
+          Row := IntToStr(SongID) + '  ' + Artist + ' — ' + Title;
+          if Lang <> '' then Row := Row + '  [' + Lang + ']';
+          ParsedRows.Add(Row);
         end;
-        Row := IntToStr(SongID) + '  ' + Artist + ' — ' + Title;
-        if Lang <> '' then Row := Row + '  [' + Lang + ']';
-        FResults.Add(Row);
-      end;
+        // Publish only after the entire bounded response has passed validation.
+        FResults.Assign(ParsedRows);
+        FResultItems := ParsedResults;
+      finally ParsedRows.Free; end;
       FStatus := 'Metadata results only. Downloads are unavailable.';
+    end
+    else if EventType = 'details' then
+    begin
+      if FDetailReceived or not JSONInteger(Obj, 'id', SongID) or
+         (SongID <= 0) or (SongID <> FPendingSongID) or
+         not (Obj.Find('links') is TJSONArray) then
+      begin FailProtocol('Catalog helper returned invalid source details.'); Exit; end;
+      Links := TJSONArray(Obj.Find('links'));
+      if Links.Count > CMaxSourceLinks then
+      begin FailProtocol('Catalog helper returned too many source links.'); Exit; end;
+      ParsedLinks := TStringList.Create;
+      try
+        for I := 0 to Links.Count - 1 do
+        begin
+          if Links.Items[I].JSONType <> jtString then
+          begin FailProtocol('Catalog helper returned an invalid source link.'); Exit; end;
+          Link := Links.Items[I].AsString;
+          if not IsCatalogSourceLink(Link) then
+          begin FailProtocol('Catalog helper returned an invalid source link.'); Exit; end;
+          ParsedLinks.Add(Link);
+        end;
+        FDetailLinks.Assign(ParsedLinks);
+        FDetailSongID := SongID;
+        FDetailReceived := true;
+      finally ParsedLinks.Free; end;
+      if FDetailLinks.Count = 0 then
+        FStatus := 'Source details loaded. No media links listed. Downloads are unavailable.'
+      else
+        FStatus := 'Catalog source details loaded. Downloads are unavailable.';
     end
     else if EventType = 'error' then
     begin
@@ -880,16 +1080,14 @@ begin
       else if Code = 'download_disabled' then FStatus := 'Downloads are disabled.'
       else FStatus := 'Catalog request failed (' + Code + ').';
       // v1 errors are terminal, including busy; adapter does not follow them with idle.
-      FBusy := false; FPendingID := ''; FPendingOp := ''; FPendingDeadline := 0;
-      FErrorCode := Code;
+      FinishPending(string(FStatus), Code);
     end
     else if EventType = 'idle' then
     begin
-      FBusy := false;
-      FPendingID := '';
-      FPendingOp := '';
-      FPendingDeadline := 0;
+      if (FPendingOp = 'details') and not FDetailReceived then
+      begin FailProtocol('Catalog helper omitted its source details result.'); Exit; end;
       if FStatus = 'Searching catalog…' then FStatus := 'Search complete.';
+      FinishPending(string(FStatus), '');
     end
     else
       FailProtocol('Catalog helper returned an unknown response type.');
@@ -945,6 +1143,9 @@ begin
   if not FTransport.Running and FAuthenticated and not FClosing then
   begin
     FAuthenticated := false;
+    FSessionReady := false;
+    FDetailsCapability := false;
+    ClearDetails;
     FStatus := 'Catalog helper exited. Sign in again.';
     FErrorCode := 'helper_exited';
   end;
