@@ -26,7 +26,7 @@ type
     FFocus, FTop, FSelected, FRemoteCount, FSource: integer;
     FDetailsID: Int64;
     FSearchDue: QWord;
-    FSignIn, FRescan, FLoginQueued, FAutoLoginAttempted, FAutoDownload, FLeaving: boolean;
+    FSignIn, FRescan, FLoginQueued, FLoginInFlight, FAutoLoginAttempted, FAutoDownload, FLeaving: boolean;
     procedure Changed;
     procedure BuildRows;
     procedure UpdateView;
@@ -35,6 +35,7 @@ type
     procedure StartSession;
     procedure Tick;
     procedure ClearPassword;
+    procedure QueueLogin;
   public
     constructor Create; override;
     destructor Destroy; override;
@@ -49,6 +50,7 @@ procedure OpenLibrarySearch(const Query: UTF8String);
 procedure FreeLibrarySearch;
 {$IFDEF LIBRARY_E2E}
 function LibrarySearchTestSnapshot(out Query: UTF8String; out Selected, Rows, Remote: integer; out Busy, SignedIn: boolean): boolean;
+function LibrarySearchTestLocalFirst: boolean;
 {$ENDIF}
 implementation
 uses SysUtils, Math, IniFiles, UCommon, dglOpenGL, UDrawTexture, UThemes, UGraphic, UPlatform, UCommandLine,
@@ -57,6 +59,18 @@ uses SysUtils, Math, IniFiles, UCommon, dglOpenGL, UDrawTexture, UThemes, UGraph
 var LibrarySearch: TScreenLibrarySearch;
 
 {$IFDEF LIBRARY_E2E}
+function LibrarySearchTestLocalFirst: boolean;
+var I: integer;
+begin
+  Result := false;
+  if not Assigned(LibrarySearch) or (Length(LibrarySearch.FRows) < 5) then Exit;
+  if LibrarySearch.FRows[0].LocalIndex < 0 then Exit;
+  for I := 1 to 3 do if LibrarySearch.FRows[I].Caption <> '' then Exit;
+  for I := 4 to High(LibrarySearch.FRows) do
+    if LibrarySearch.FRows[I].RemoteIndex < 0 then Exit;
+  Result := true;
+end;
+
 function LibrarySearchTestSnapshot(out Query: UTF8String; out Selected, Rows, Remote: integer; out Busy, SignedIn: boolean): boolean;
 var I: integer;
 begin
@@ -191,8 +205,10 @@ begin
       Song := CatSongs.Song[I];
       if Song.Main then Continue;
       Key := SongIdentity(Song.Artist, Song.Title);
-      if Seen.IndexOf(string(Key)) >= 0 then Continue;
-      Seen.Add(string(Key));
+      if (Trim(Song.Artist) <> '') and (Trim(Song.Title) <> '') then begin
+        if Seen.IndexOf(string(Key)) >= 0 then Continue;
+        Seen.Add(string(Key));
+      end;
       if (Q = '') or (Pos(Q, UTF8LowerCase(Song.Artist + ' ' + Song.Title)) > 0) then begin
         AddRow(I, -1, Song.Artist + ' - ' + Song.Title);
         Inc(LocalCount);
@@ -201,8 +217,10 @@ begin
     if Assigned(FSession) and (FLastQuery = FQuery) and (Q <> '') then
       for I := 0 to FSession.ResultCount - 1 do begin
         Remote := FSession.ResultItems[I]; Key := SongIdentity(Remote.Artist, Remote.Title);
-        if Seen.IndexOf(string(Key)) >= 0 then Continue;
-        Seen.Add(string(Key));
+        if (Trim(Remote.Artist) <> '') and (Trim(Remote.Title) <> '') then begin
+          if Seen.IndexOf(string(Key)) >= 0 then Continue;
+          Seen.Add(string(Key));
+        end;
         if RemoteCount = 0 then
           while (Length(FRows) mod 4) <> 0 do AddRow(-1, -1, '');
         AddRow(-1, I, Remote.Artist + ' - ' + Remote.Title);
@@ -218,6 +236,7 @@ procedure TScreenLibrarySearch.Tick;
 begin
   if FLeaving or not Assigned(FSession) then Exit;
   FSession.Poll;
+  if not FSession.Busy then FLoginInFlight := false;
   if (FSession.InstalledFolder <> '') and not FSession.Busy and
      (FSession.InstalledFolder <> FLastInstalled) then begin
     FLastInstalled := FSession.InstalledFolder;
@@ -225,16 +244,16 @@ begin
     FRescan := true; Leave; Exit;
   end;
   if FSession.Authenticated and not FSession.Busy and FSignIn then begin
-    FSignIn := false; FFocus := 0;
+    FSignIn := false; FFocus := 0; FLoginQueued := false;
   end;
-  if ClaimCatalogAutoSignIn(FAutoLoginAttempted, FSession.Busy,
+  if not FLoginQueued and ClaimCatalogAutoSignIn(FAutoLoginAttempted, FSession.Busy,
     FSession.Authenticated, FSession.StoredCredentials <> '',
-    FSession.ErrorCode <> '', FSignIn) then FSession.LoginStored;
+    FSession.ErrorCode <> '', FSignIn) then FLoginInFlight := FSession.LoginStored;
   if FLoginQueued and not FSession.Busy then begin
     FLoginQueued := false;
     if (FUser = '') and (FPassword = '') and (FSession.StoredCredentials <> '') then
-      FSession.LoginStored
-    else FSession.Login(FUser, FPassword);
+      FLoginInFlight := FSession.LoginStored
+    else FLoginInFlight := FSession.Login(FUser, FPassword);
     ClearPassword;
   end;
   if not FSession.Busy and FSession.Authenticated and
@@ -258,6 +277,12 @@ begin
     FRemoteCount := FSession.ResultCount;
     BuildRows;
   end;
+end;
+
+procedure TScreenLibrarySearch.QueueLogin;
+begin
+  if Assigned(FSession) and not FLoginInFlight and not FSession.Authenticated then
+    FLoginQueued := true;
 end;
 
 procedure TScreenLibrarySearch.UpdateView;
@@ -444,10 +469,10 @@ begin
   Result := true; if not Down then Exit;
   if Key = SDLK_F2 then begin
     FSignIn := not FSignIn;
-    if FSignIn then FFocus := 2 else begin FFocus := 0; ClearPassword; end;
+    if FSignIn then FFocus := 2 else begin FFocus := 0; FLoginQueued := false; ClearPassword; end;
   end else if Key = SDLK_ESCAPE then begin
     if FDetailsID > 0 then begin FAutoDownload := false; FDetailsID := 0; BuildRows; end
-    else if FSignIn then begin FSignIn := false; FFocus := 0; ClearPassword; end
+    else if FSignIn then begin FSignIn := false; FFocus := 0; FLoginQueued := false; ClearPassword; end
     else Leave;
   end else if Key = SDLK_TAB then begin
     if FSignIn then begin Inc(FFocus); if FFocus > 4 then FFocus := 2; end
@@ -477,12 +502,13 @@ begin
       FTop := (FSelected div LibraryGridPageSize) * LibraryGridPageSize;
     end;
   end else if Key = SDLK_RETURN then begin
-    if FSignIn then FLoginQueued := true else Activate;
+    if FSignIn then QueueLogin else Activate;
   end else if (Key = SDLK_d) and (FDetailsID > 0) then Activate
   else if Key = SDLK_BACKSPACE then begin
     case FFocus of
       2: DeleteLastCatalogCharacter(FUser);
       3: DeleteLastCatalogCharacter(FPassword);
+      4: ; // The sign-in button is not an editable field.
     else DeleteLastCatalogCharacter(FQuery); FFocus := 0; Changed;
     end;
   end else if (FDetailsID = 0) and IsPrintableCatalogCharacter(CharCode) and
@@ -491,6 +517,7 @@ begin
     case FFocus of
       2: if Length(FUser) + Length(S) <= 200 then FUser := FUser + S;
       3: if Length(FPassword) + Length(S) <= 1024 then FPassword := FPassword + S;
+      4: ;
     else
       if Length(FQuery) + Length(S) <= 200 then begin FQuery := FQuery + S; FFocus := 0; Changed; end;
     end;
@@ -512,7 +539,7 @@ begin
   else if (Y >= 58) and (Y < 90) then FFocus := 0
   else if (Y >= 96) and (Y < 122) then begin
     if not FSignIn then begin FSignIn := true; FFocus := 2; end
-    else if X >= 640 then FLoginQueued := true
+    else if X >= 640 then QueueLogin
     else if X < 315 then FFocus := 2 else FFocus := 3;
   end else if (FDetailsID > 0) and (Y >= 220) and (Y < 460) then begin
     if Assigned(FSession) and FSession.Busy then Exit;

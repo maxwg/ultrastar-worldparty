@@ -220,3 +220,20 @@ Additional native tests cover cancellation with descendants, an unrelated live
 sentinel, bounded output flooding, merged diagnostics, and already-exited helper
 process accounting (five checks). The live USDB repeat-query and repeat-details
 cache checks caused zero additional HTTP requests while preserving results.
+
+## Luna review follow-up (2026-10-17)
+
+Three GPT-6 Luna reviews covered UI/input, backend/process ownership, and
+integration/fixtures. The parent reviewed every finding and patch. Sign-in
+submissions now coalesce during startup and ignore repeated Enter while a login
+is active; typing on the sign-in button leaves the query unchanged. Incomplete
+artist/title metadata follows the library loader policy instead of being merged
+into one row. Search trims and caps values before both cache lookup and the
+upstream request, with an offline regression for whitespace-equivalent queries.
+
+The real SDL harness now holds login in flight until repeated submits have been
+dispatched, requires exactly one login, and checks local-first ordering and
+local/local, local/remote and remote/remote deduplication. Both fade modes pass,
+as do the 43-test contract suite (one platform skip), five native Job tests and
+Windows path checks. The clean release build succeeds. Physical microphone and
+speaker verification remains outside this synthetic-audio test.

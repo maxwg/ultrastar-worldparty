@@ -16,7 +16,7 @@ args = parser.parse_args()
 runtime = args.runtime.resolve()
 for dll in (args.repo / 'game').glob('*.dll'):
     shutil.copy2(dll, runtime / dll.name)
-for directory in ('songs/LocalFixture', 'screenshots'):
+for directory in ('songs/LocalFixture', 'songs/LocalFixtureDuplicate', 'screenshots'):
     (runtime / directory).mkdir(parents=True, exist_ok=True)
 shutil.copy2(Path(__file__).with_name('fixture_adapter.py'), runtime / 'fixture_adapter.py')
 (runtime / 'fixture-credentials.json').write_text(json.dumps({'user':'offline-fixture','pass':'offline-fixture'}))
@@ -38,3 +38,5 @@ subprocess.run([args.ffmpeg, '-hide_banner','-loglevel','error','-y',
     '-t','20','-c:v','libx264','-pix_fmt','yuv420p','-c:a','aac',str(runtime/'fixture.mp4')], check=True)
 shutil.copy2(runtime/'fixture.mp4', runtime/'songs/LocalFixture/media.mp4')
 (runtime/'songs/LocalFixture/song.txt').write_text(chart.replace('Remote Fixture','Local Fixture'), encoding='utf-8')
+shutil.copy2(runtime/'fixture.mp4', runtime/'songs/LocalFixtureDuplicate/media.mp4')
+(runtime/'songs/LocalFixtureDuplicate/song.txt').write_text(chart.replace('Remote Fixture','Local Fixture'), encoding='utf-8')

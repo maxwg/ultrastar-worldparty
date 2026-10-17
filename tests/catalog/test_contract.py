@@ -700,6 +700,16 @@ class ParserAndProtocolTests(unittest.TestCase):
             self.assertEqual(second[0]['title'], 'Hello')
             self.assertEqual(request.call_count, 1)
 
+    def test_search_trims_values_before_request_and_cache_key(self):
+        instance = catalog.Catalog(); instance.authenticated = True
+        with patch.object(instance, 'request', return_value='') as request:
+            instance.search('  Adele  ', '\tHello ')
+            instance.search('Adele', 'Hello')
+            self.assertEqual(request.call_count, 1)
+            sent = request.call_args[0][1]
+            self.assertEqual(sent['interpret'], 'Adele')
+            self.assertEqual(sent['title'], 'Hello')
+
     def test_search_cache_expires(self):
         instance = catalog.Catalog(); instance.authenticated = True
         with patch.object(instance, 'request', return_value='') as request:

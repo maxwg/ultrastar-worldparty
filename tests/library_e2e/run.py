@@ -22,6 +22,7 @@ print(receipt.read_text() if receipt.exists() else 'FAIL: no game receipt')
 if result.reason != 'exited' or result.returncode:
     raise SystemExit('FAIL: game '+result.reason+', exit '+str(result.returncode))
 trace = (runtime/'adapter-trace.txt').read_text().splitlines()
+assert trace.count('login') == 1, 'Repeated account submit must not duplicate automatic sign-in'
 assert trace.count('download') == 2, 'Double-click must produce only failed source + successful retry'
 assert trace.count('details') == 1, 'Repeated Enter must not duplicate source lookup'
 errors = [line for line in (runtime/'Error.log').read_text(errors='replace').splitlines() if 'ERROR:' in line]

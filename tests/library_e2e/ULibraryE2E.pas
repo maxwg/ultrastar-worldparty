@@ -7,7 +7,7 @@ procedure LibraryE2ETrace(const MessageText: string);
 implementation
 uses SysUtils, Classes, sdl2, UGraphic, UDisplay, USongs, UScreenSong,
   UScreenLibrarySearch, UMusic, UNote;
-var Phase: integer = 0; Started: QWord; Receipt: TextFile;
+var Phase: integer = 0; Started: QWord; Receipt: TextFile; LoginReleased: boolean = false;
 procedure Note(const S: string);
 begin WriteLn(Receipt, S); Flush(Receipt); end;
 procedure LibraryE2ETrace(const MessageText: string);
@@ -31,13 +31,19 @@ begin FillChar(E, SizeOf(E), 0); E.type_ := SDL_KEYDOWN; E.key.keysym.sym := K; 
 procedure Advance;
 begin Inc(Phase); Note('phase '+IntToStr(Phase)); end;
 procedure LibraryE2ETick;
-var Query: UTF8String; Selected, Rows, Remote: integer; Busy, SignedIn: boolean;
+var Query: UTF8String; Selected, Rows, Remote: integer; Busy, SignedIn: boolean; Marker: TextFile;
 begin
   if Started = 0 then begin
     Started := GetTickCount64;
     AssignFile(Receipt, 'e2e-result.txt'); Rewrite(Receipt); Note('START real SDL application end-to-end');
   end;
   if GetTickCount64 - Started > 75000 then Fail('timeout at phase '+IntToStr(Phase));
+  if (Phase = 3) and not LoginReleased then begin
+    if not LibrarySearchTestSnapshot(Query, Selected, Rows, Remote, Busy, SignedIn) or
+       not Busy or SignedIn then Fail('expected login in flight during repeated submit');
+    AssignFile(Marker, 'release-login'); Rewrite(Marker); CloseFile(Marker);
+    LoginReleased := true;
+  end;
   case Phase of
     0: if Assigned(Songs) and Songs.GetLoadProgress.Finished and Assigned(ScreenMain) and not Assigned(Display.NextScreen) then begin
       ScreenPopupError.Visible := false;
@@ -54,11 +60,18 @@ begin
       if Query <> 'xyz' then Fail('lost batched or transition text: '+string(Query));
       Note('PASS: complete batched SDL text and typing during search transition');
       Key(SDLK_BACKSPACE); Key(SDLK_BACKSPACE); Key(SDLK_BACKSPACE); TextEvent('Fixture'); Advance;
+      // Exercise the account button while automatic sign-in is active or complete.
+      // Button typing must not edit the query, and repeated submit must not reauthenticate.
+      Key(SDLK_F2); Key(SDLK_TAB); Key(SDLK_TAB); TextEvent('ignored');
+      Key(SDLK_BACKSPACE); Key(SDLK_RETURN); Key(SDLK_RETURN); Key(SDLK_F2);
     end;
     3: if LibrarySearchTestSnapshot(Query, Selected, Rows, Remote, Busy, SignedIn) and
           SignedIn and not Busy and (Remote > 0) then begin
       if Query <> 'Fixture' then Fail('query edit');
-      Note('PASS: stored automatic sign-in and asynchronous search');
+      if (Rows <> 18) or (Remote <> 14) or not LibrarySearchTestLocalFirst then
+        Fail('local-first layout or artist/title deduplication');
+      Note('PASS: local-first grid and duplicate local/remote song suppression');
+      Note('PASS: stored sign-in, account button input isolation and asynchronous search');
       Display.SaveScreenShot; ScreenPopupInfo.Visible := false;
       Key(SDLK_UP); Advance;
     end;

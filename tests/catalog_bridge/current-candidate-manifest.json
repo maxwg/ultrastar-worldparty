@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
   "candidate": "Windows collection grid, USDB search/download controls and artist/title deduplication",
-  "created_utc": "2026-10-17T09:02:48.091105+00:00",
-  "base_checkpoint_commit": "127a68a476a847ee6fd35a20b69ad8b16df34864",
-  "base_checkpoint_tree": "7c23c1ea74ca992722de57dc0a687406d17e44f6",
-  "scope": "Clean i386-win32 compilation, offline regressions and live authenticated USDB search/source details. Actual media installation and visual UI validation are unverified.",
+  "created_utc": "2026-10-17T09:08:13.137271+00:00",
+  "base_checkpoint_commit": "82734690dea474137f8e376ca29de20b1b53f2b1",
+  "base_checkpoint_tree": "aa09922d9aaa599a243719128f6c18f55eb2d3ea",
+  "scope": "Clean i386-win32 release, offline regressions, prior live USDB authentication/search/media installation, and real SDL/OpenGL fixture end-to-end validation. Physical microphone/speaker hardware remains unverified.",
   "files": [
     {
       "path": "docs/song-catalog-backend.md",
@@ -13,8 +13,8 @@
     },
     {
       "path": "docs/song-search-integration.md",
-      "bytes": 14399,
-      "sha256": "21e658fe351a5e4b225e592d5f60d77649d9fff8c2d950b1e9642df21381f1bb"
+      "bytes": 15444,
+      "sha256": "2437c53a9ac1e74faeb70065acf93b497fe5bdf4ea3d1b2baa5af27be9a84061"
     },
     {
       "path": "game/languages/English.ini",
@@ -103,8 +103,8 @@
     },
     {
       "path": "src/screens/UScreenLibrarySearch.pas",
-      "bytes": 22994,
-      "sha256": "73ba2d165c5c4a362518575d86c84c237f85bc95575a64119ba3191672378a5b"
+      "bytes": 24103,
+      "sha256": "7b415869884b3f024026bbe582478d95b8de233b9c446de3e6d44acef41d2505"
     },
     {
       "path": "src/screens/UScreenMain.pas",
@@ -193,18 +193,18 @@
     },
     {
       "path": "tests/library_e2e/ULibraryE2E.pas",
-      "bytes": 4107,
-      "sha256": "ab1433f631ad30d356771f9d94cb752be1d944ea02e2090a432cf52b7eb56bde"
+      "bytes": 5071,
+      "sha256": "d302b0890175231c7bc1dd665c0fd15322b485bd315ab03aafaa699f0c53e26e"
     },
     {
       "path": "tests/library_e2e/fixture_adapter.py",
-      "bytes": 1853,
-      "sha256": "b4976ea2600d1a5ebd6283d75c856745e12b24102cbffb9134391a5afe95754b"
+      "bytes": 2552,
+      "sha256": "1621d632e6ed592b49b76e33cb3495fba99d90d20f38b88be9171c94e99f888f"
     },
     {
       "path": "tests/library_e2e/prepare.py",
-      "bytes": 2412,
-      "sha256": "e1252a2c32cfa674b5b228a094e9d31ff96e4aaba01c42bf687428c4f80215b4"
+      "bytes": 2655,
+      "sha256": "acdc1a28deacd875556775ce44784c8fa55ca7331d12a011363d26a14eda7c23"
     },
     {
       "path": "tests/library_e2e/run.ps1",
@@ -213,8 +213,8 @@
     },
     {
       "path": "tests/library_e2e/run.py",
-      "bytes": 1511,
-      "sha256": "6a2ede3262870f2f913154d21b5f8243e25e142a56d707ac570c158fe8344957"
+      "bytes": 1608,
+      "sha256": "fbfa16b32dd6c87780b038f9759ce0330f709f124ec0b83318aa155ae091a357"
     },
     {
       "path": "tests/library_grid_test.pas",
@@ -243,8 +243,8 @@
     },
     {
       "path": "tools/song_catalog.py",
-      "bytes": 34016,
-      "sha256": "323f38513d30be5f31834313959b525a47dd42a0a431caabb241e1cc73179f13"
+      "bytes": 34247,
+      "sha256": "56f901bc69259f7a4bd0f00f6a22e729bce653fe4bfe46e3dd58294b060c5688"
     }
   ],
   "source_hash_normalization": "CRLF normalized to LF",
@@ -280,7 +280,7 @@
   },
   "offline_validation": {
     "bridge_test": "PASS: 378 i386-win32 assertions, including retained-source retries",
-    "adapter_contract": "PASS: 42 tests, one existing POSIX-only skip",
+    "adapter_contract": "PASS: 43 tests, one existing POSIX-only skip",
     "identity_test": "PASS: 5 assertions",
     "grid_test": "PASS: 121 layout and wrap-navigation assertions",
     "windows_path_check": "PASS",
@@ -288,7 +288,7 @@
     "auto_signin_test": "PASS: 9 one-attempt, busy, authenticated, missing-credentials and failure state assertions",
     "job_cleanup": "PASS: 5 native cleanup, stderr, cancellation/sentinel and output-bound checks",
     "text_input": "PASS: complete ASCII, accented and astral text events",
-    "windows_e2e": "PASS: real SDL/OpenGL game with fades on and off, fixture adapter, synthetic media, dummy audio; clean error logs and exact request counts"
+    "windows_e2e": "PASS: real SDL/OpenGL with fades on/off; held in-flight sign-in, exact one-login count, button focus isolation, local-first/dedup, download fallback and autoplay; clean errors, dummy audio"
   },
   "live_validation": {
     "authentication": "PASS: existing CLI credential file, no values copied or printed",

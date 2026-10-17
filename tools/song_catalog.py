@@ -307,12 +307,17 @@ class Catalog:
         self.authenticated = True
 
     def search(self, artist, title, offset=0):
-        key = (artist.strip().casefold(), title.strip().casefold(), offset)
+        # Cache the exact normalized values sent to USDB. Trimming only the key
+        # can make a whitespace-bearing query reuse results from a different
+        # upstream request.
+        artist = artist.strip()[:200]
+        title = title.strip()[:200]
+        key = (artist.casefold(), title.casefold(), offset)
         cached = self.search_cache.get(key)
         if self.authenticated and cached and time.monotonic() - cached[0] < 300:
             return [dict(row) for row in cached[1]]
         document = self.request('/?link=list', {
-            'interpret': artist[:200], 'title': title[:200], 'limit': 6,
+            'interpret': artist, 'title': title, 'limit': 6,
             'start': max(0, int(offset)), 'order': 'lastchange', 'ud': 'desc'})
         self.check_session_page(document)
         rows = parse_search(document)
