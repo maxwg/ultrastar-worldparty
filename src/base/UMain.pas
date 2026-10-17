@@ -63,6 +63,7 @@ implementation
 
 uses
   UTextInputEvents,
+  {$IFDEF LIBRARY_E2E} ULibraryE2E, {$ENDIF}
   math,
   dglOpenGL,
   UAvatars,
@@ -303,6 +304,7 @@ begin
 
       // display
       Done := not Display.Draw;
+      {$IFDEF LIBRARY_E2E} LibraryE2ETick; {$ENDIF}
       SwapBuffers;
 
       // FPS limiter
@@ -318,6 +320,10 @@ begin
     except
       on E : Exception do
       begin
+        {$IFDEF LIBRARY_E2E}
+        for I := 0 to ExceptFrameCount - 1 do LibraryE2ETrace(BackTraceStrFunc(ExceptFrames[I]));
+        LibraryE2EFail(E.ClassName+': '+E.Message+' at '+BackTraceStrFunc(ExceptAddr));
+        {$ENDIF}
         J := J+1;
         if J > 1 then
         begin

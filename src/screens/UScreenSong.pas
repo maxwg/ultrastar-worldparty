@@ -2033,7 +2033,8 @@ procedure TScreenSong.LoadCover(const I: integer);
 begin
   if Self.Button[I].Texture.TexNum = 0 then
   begin
-    Self.Button[I].Texture := UTexture.Texture.LoadTexture(USongs.CatSongs.Song[I].Path.Append(USongs.CatSongs.Song[I].Cover));
+    if USongs.CatSongs.Song[I].Cover.IsSet then
+      Self.Button[I].Texture := UTexture.Texture.LoadTexture(USongs.CatSongs.Song[I].Path.Append(USongs.CatSongs.Song[I].Cover));
     if Self.Button[I].Texture.TexNum = 0 then
       Self.Button[I].Texture := Self.DefaultCover;
   end;

@@ -47,11 +47,27 @@ type
   end;
 procedure OpenLibrarySearch(const Query: UTF8String);
 procedure FreeLibrarySearch;
+{$IFDEF LIBRARY_E2E}
+function LibrarySearchTestSnapshot(out Query: UTF8String; out Selected, Rows, Remote: integer; out Busy, SignedIn: boolean): boolean;
+{$ENDIF}
 implementation
 uses SysUtils, Math, IniFiles, UCommon, dglOpenGL, UDrawTexture, UThemes, UGraphic, UPlatform, UCommandLine,
   UUnicodeUtils, USongIdentity, USong, USongs, UScreenSong, UScreenMain,
   USongCatalogInput, USongCatalogLayout, ULibraryGridLayout, UCatalogAutoSignIn;
 var LibrarySearch: TScreenLibrarySearch;
+
+{$IFDEF LIBRARY_E2E}
+function LibrarySearchTestSnapshot(out Query: UTF8String; out Selected, Rows, Remote: integer; out Busy, SignedIn: boolean): boolean;
+var I: integer;
+begin
+  Result := Assigned(LibrarySearch); if not Result then Exit;
+  Query := LibrarySearch.FQuery; Selected := LibrarySearch.FSelected;
+  Rows := Length(LibrarySearch.FRows); Remote := 0;
+  for I := 0 to Rows - 1 do if LibrarySearch.FRows[I].RemoteIndex >= 0 then Inc(Remote);
+  Busy := not Assigned(LibrarySearch.FSession) or LibrarySearch.FSession.Busy;
+  SignedIn := Assigned(LibrarySearch.FSession) and LibrarySearch.FSession.Authenticated;
+end;
+{$ENDIF}
 
 procedure OpenLibrarySearch(const Query: UTF8String);
 begin
@@ -399,7 +415,7 @@ begin
     if FRows[Index].LocalIndex >= 0 then Box(X, Y, 174, 104, 0.07, 0.12, 0.2)
     else Box(X, Y, 174, 104, 0.17, 0.08, 0.23);
     Key := '';
-    if FRows[Index].LocalIndex >= 0 then
+    if (FRows[Index].LocalIndex >= 0) and CatSongs.Song[FRows[Index].LocalIndex].Cover.IsSet then
       Key := CatSongs.Song[FRows[Index].LocalIndex].Path.Append(CatSongs.Song[FRows[Index].LocalIndex].Cover).ToUTF8;
     if Key <> FCoverKeys[I] then begin
       if FCovers[I].TexNum <> 0 then UTexture.Texture.UnLoadTexture(FCovers[I]);

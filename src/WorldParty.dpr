@@ -218,6 +218,10 @@ UVideo                    in 'media\UVideo.pas',
   // must be after UVideo, so it will not be the default video module
   UVisualizer               in 'media\UVisualizer.pas',
 {$ENDIF}
+  {$IF Defined(LIBRARY_E2E) and Defined(UseBASS)}
+  UAudioInput_SDL in 'media\UAudioInput_SDL.pas',
+  UAudioPlayback_SDL in 'media\UAudioPlayback_SDL.pas',
+  {$ENDIF}
   {$IFDEF UseBASS}
   BASS in 'lib\bass\bass.pas',
   BASS_FX in 'lib\bass_fx\bass_fx.pas',
@@ -293,6 +297,7 @@ UVideo                    in 'media\UVideo.pas',
   UScreenAbout            in 'screens\UScreenAbout.pas',
   UScreenDevelopers       in 'screens\UScreenDevelopers.pas',
 
+  {$IFDEF LIBRARY_E2E} ULibraryE2E in '..\tests\library_e2e\ULibraryE2E.pas', {$ENDIF}
   SysUtils;
 
 const

@@ -319,7 +319,7 @@ begin
         if not Self.PreloadCover then
           RtlEventWaitFor(Self.Event);
 
-        SDL_FreeSurface(UImage.LoadImage(Song.Path.Append(Song.Cover)));
+        if Song.Cover.IsSet then SDL_FreeSurface(UImage.LoadImage(Song.Path.Append(Song.Cover)));
       end;
       Self.ProgressSong.CoversPreload := false;
       Log.LogBenchmark('Cover loading', 3);

@@ -316,9 +316,9 @@ def run_owned(argv: Sequence[str], *, cwd: str, timeout: float,
     A cleanup failure raises rather than reporting successful cancellation.
     Concurrent calls/other code creating processes with broad handle inheritance
     are out of scope; coordinate this single-owner helper in the host process.
-    Every lifetime process must be observed and retained until it signals. A
-    short-lived descendant missed between polls causes a conservative error,
-    even if it has already exited. Native compatibility requires validation.
+    Live observed descendants retain handles until they signal. Short-lived
+    descendants can exit between polls; zero active Job members after cleanup
+    verifies that no owned process remains.
     """
     if isinstance(argv, (str, bytes)) or not argv or any(
             not isinstance(arg, str) or "\0" in arg for arg in argv):

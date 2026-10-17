@@ -36,15 +36,16 @@ automatically attempts stored sign-in once the helper is ready. It waits while
 busy, preserves an existing session, and avoids repeated attempts after failure. yt-dlp and ffprobe must be
 available to the helper. No account is created automatically.
 
-Verification: full clean i386-win32 release compilation; 39 adapter tests (one
-existing POSIX-only skip), 375 bridge assertions, five identity assertions, and
-116 grid bounds/overlap/hit-target assertions and nine auto-sign-in state checks. Saved credentials from the
+Verification: full clean i386-win32 release compilation; 42 adapter tests (one
+existing POSIX-only skip), 378 bridge assertions, five identity assertions, and
+121 grid bounds/overlap/hit-target assertions and nine auto-sign-in state checks. Saved credentials from the
 installed UltraStar CLI successfully authenticated through the live adapter:
 Adele returned seven results and source details returned two verified media
 links. Credential values were not printed or copied. A live download of Adele - Lovesong (USDB 28904) succeeded using the second
 listed source after the first proved unavailable; ffprobe verified its audio.
-Visual UI and automatic karaoke playback remain unverified on screen; Windows
-UI activation returned access denied.
+The Windows SDL/OpenGL end-to-end test now verifies rendered UI, rescan and
+automatic karaoke playback with synthetic media and dummy audio callbacks.
+Physical microphone and speaker operation remain unverified in this session.
 
 ## Historical metadata-only developer screen
 
@@ -197,3 +198,25 @@ captured together with stdout. Job cleanup checks zero active processes after
 termination; the lifetime process counter can include helpers that exited
 between polls and is not evidence of a leak. Atomic Job assignment and
 kill-on-close ownership remain enforced.
+
+## End-to-end audit (2026-10-17)
+
+The reproducible `tests/library_e2e/run.ps1` test passes with fades on and off.
+It found and fixed two actual handoff defects: rescan completion could replace
+an in-progress screen transition and skip the song screen OnShow/Refresh; INI
+reload replaced microphone configuration arrays without rebinding device indices.
+Both failures were reproduced in the real game before the fixes. Missing cover
+art now uses the default cover without trying to decode a directory as an image.
+
+The harness drives the real SDL event loop and Windows OpenGL renderer, checks
+fourteen remote cards across pages, sends repeated Enter, observes one failed
+source plus one successful retry, and verifies the correct installed chart in
+the singing screen with advancing playback time. Actual screenshots were visually
+inspected; both final runs have clean game error logs and no extra source/download
+requests. Audio hardware is replaced only in this test build by SDL dummy input
+and output; physical microphone accuracy and speaker output are not claimed.
+
+Additional native tests cover cancellation with descendants, an unrelated live
+sentinel, bounded output flooding, merged diagnostics, and already-exited helper
+process accounting (five checks). The live USDB repeat-query and repeat-details
+cache checks caused zero additional HTTP requests while preserving results.

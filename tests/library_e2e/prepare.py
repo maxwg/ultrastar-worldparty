@@ -1,0 +1,40 @@
+"""Create an isolated SDL end-to-end runtime with copyright-free media."""
+import argparse
+import configparser
+import json
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--repo', type=Path, required=True)
+parser.add_argument('--runtime', type=Path, required=True)
+parser.add_argument('--ffmpeg', required=True)
+parser.add_argument('--no-fade', action='store_true')
+args = parser.parse_args()
+runtime = args.runtime.resolve()
+for dll in (args.repo / 'game').glob('*.dll'):
+    shutil.copy2(dll, runtime / dll.name)
+for directory in ('songs/LocalFixture', 'screenshots'):
+    (runtime / directory).mkdir(parents=True, exist_ok=True)
+shutil.copy2(Path(__file__).with_name('fixture_adapter.py'), runtime / 'fixture_adapter.py')
+(runtime / 'fixture-credentials.json').write_text(json.dumps({'user':'offline-fixture','pass':'offline-fixture'}))
+chart = '#TITLE:Remote Fixture\n#ARTIST:E2E\n#MP3:media.mp4\n#VIDEO:media.mp4\n#BPM:120\n#GAP:0\n#ENCODING:UTF8\n: 0 8 60 la\n- 8\n: 10 8 62 la\nE\n'
+(runtime / 'fixture.txt').write_text(chart, encoding='utf-8')
+settings = configparser.ConfigParser()
+settings.optionxform = str
+settings['Game'] = dict(Players='1', Language='English', Tabs='Off', Sorting='Artist', SongMenu='Chessboard')
+settings['Graphics'] = dict(FullScreen='Off', Resolution='800x600', Screens='1', Split='Off', MaxFramerate='60')
+settings['Graphics']['ScreenFade'] = 'Off' if args.no_fade else 'On'
+settings['Catalog'] = dict(Python=sys.executable, Adapter=str(runtime/'fixture_adapter.py'), Credentials=str(runtime/'fixture-credentials.json'))
+settings['Directories'] = dict(SongDir1=str(runtime/'songs'))
+settings['Record'] = {'DeviceName[1]':'System audio capture device','Input[1]':'0','Channel1[1]':'1','Channel2[1]':'0','Latency[1]':'0'}
+with (runtime/'config.ini').open('w', encoding='utf-8') as handle:
+    settings.write(handle)
+subprocess.run([args.ffmpeg, '-hide_banner','-loglevel','error','-y',
+    '-f','lavfi','-i','color=c=black:s=320x240:r=15',
+    '-f','lavfi','-i','sine=frequency=440:sample_rate=44100',
+    '-t','20','-c:v','libx264','-pix_fmt','yuv420p','-c:a','aac',str(runtime/'fixture.mp4')], check=True)
+shutil.copy2(runtime/'fixture.mp4', runtime/'songs/LocalFixture/media.mp4')
+(runtime/'songs/LocalFixture/song.txt').write_text(chart.replace('Remote Fixture','Local Fixture'), encoding='utf-8')

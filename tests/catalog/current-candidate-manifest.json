@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
   "purpose": "Current source and offline-test identity only; does not inherit native Windows validation from the historical retained manifest or receipts.",
-  "base_commit": "b5f666f4e035f94cf01f57c27f61b4779f5bc746",
+  "base_commit": "127a68a476a847ee6fd35a20b69ad8b16df34864",
   "wire_protocol_version": 1,
   "backend_sha256": {
     "song_catalog.py": "323f38513d30be5f31834313959b525a47dd42a0a431caabb241e1cc73179f13",
-    "owned_process.py": "fc84c12070b55eca3fd6c19e8090b0699a94f9cc942507192785d0c1a4b2358d"
+    "owned_process.py": "48c836edee311b3cdc258570b7d61913c2e1998951d905e72da4674231a7693a"
   },
   "test_contract_sha256": "0c7ab5f8ab03920cb23fc1d401bb5165894cbee4af003f194ea6bc7325e8e2fe",
   "retained_manifest_sha256": "1b2b4c0de65e8412b62d93b4cbe66686fd84b3429f130244e6fbcf957fa78b8b",
@@ -34,10 +34,10 @@
     },
     "native_job_regressions": {
       "status": "passed",
-      "test_count": 3,
+      "test_count": 5,
       "command": "python tests/catalog/test_job_cleanup.py"
     }
   },
-  "created_utc": "2026-10-17T08:48:16.786477+00:00",
+  "created_utc": "2026-10-17T09:02:48.026740+00:00",
   "source_hash_normalization": "CRLF normalized to LF"
 }

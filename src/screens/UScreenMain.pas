@@ -64,7 +64,7 @@ uses
   dglOpenGL,
   UGraphic,
   UNote,
-  UIni,
+  UIni, URecord,
   USongs,
   ULanguage,
   UParty,
@@ -223,19 +223,18 @@ begin
     Self.Text[Self.TextProgressSongs].Text := ProgressSong.Folder+': '+IntToStr(ProgressSong.Total)+'\n\n'+ProgressSong.FolderProcessed
   else if not Self.Text[Self.TextDescriptionLong].Visible then //after finish song loading, return to normal mode and close popup
   begin
-    if Self.ReturnToSongScreenAfterLoadSongs then
-    begin
-      Self.ReturnToSongScreenAfterLoadSongs := false;
-      if Self.CheckSongs() then
-      begin
-        UDisplay.Display.AbortScreenChange();
-        Self.FadeTo(@UGraphic.ScreenSong);
-      end;
-    end;
     Self.Text[Self.TextDescriptionLong].Visible := true;
     Self.Text[Self.TextProgressSongs].Visible := false;
     if ProgressSong.Total > 0 then
       UGraphic.ScreenPopupError.Visible := false;
+  end;
+  // Do not replace NextScreen from inside its own fade draw: that skips
+  // the song screen's OnShow/Refresh and leaves the rescan uninitialized.
+  if ProgressSong.Finished and ReturnToSongScreenAfterLoadSongs and
+     (UDisplay.Display.CurrentScreen = @UGraphic.ScreenMain) and
+     not Assigned(UDisplay.Display.NextScreen) then begin
+    ReturnToSongScreenAfterLoadSongs := false;
+    if CheckSongs then FadeTo(@UGraphic.ScreenSong);
   end;
 end;
 
@@ -289,6 +288,8 @@ begin
   if USongs.Songs.GetLoadProgress().Finished then
   begin
     UIni.Ini.Load();
+    // Reloading the INI replaces the device-config array; rebind live indices.
+    URecord.AudioInputProcessor.UpdateInputDeviceConfig;
     FreeAndNil(USongs.CatSongs);
     FreeAndNil(USongs.Songs);
     USongs.CatSongs := TCatSongs.Create();
