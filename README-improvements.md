@@ -21,6 +21,7 @@
 - Regular UltraStar background, cover buttons, mouse scaling and hover selection.
 - Up wraps to the final USDB result; paging and mouse targets match the grid.
 - Automatic saved-account sign-in; repeated submits/downloads are coalesced.
+- YouTube downloads and media helpers inherit a hidden console to preserve focus.
 - Five-minute in-memory search/details caches, limited to 64 entries each.
 - Artist + title deduplication hides repeated charts without deleting files.
 - Microphone setup replaces the old Listen tile; reload rebinds device settings.

@@ -8,8 +8,8 @@
   "files": [
     {
       "path": "docs/song-catalog-backend.md",
-      "bytes": 22595,
-      "sha256": "e8f56d1c74c74f7f29a6426f754cec6777b0cda1dc18b2bc0c16dec32df2ccad"
+      "bytes": 23126,
+      "sha256": "e3e668b3955e264b5c652d49ba74282b7ac7a8055ddfca9421c0a99b08ca3b71"
     },
     {
       "path": "docs/song-search-integration.md",
@@ -133,8 +133,8 @@
     },
     {
       "path": "tests/catalog/test_job_cleanup.py",
-      "bytes": 3167,
-      "sha256": "ca2556839889a0af9d2b11e8d2de0ca0bc41a8c61f3b904045f0874ca166e9ec"
+      "bytes": 4545,
+      "sha256": "610234ab6789f7cf33c57f85dd7b367de51509d5f642a3c8ad0f81e0fbb662c2"
     },
     {
       "path": "tests/catalog_auto_signin_test.pas",
@@ -238,13 +238,13 @@
     },
     {
       "path": "tools/owned_process.py",
-      "bytes": 21142,
-      "sha256": "48c836edee311b3cdc258570b7d61913c2e1998951d905e72da4674231a7693a"
+      "bytes": 21650,
+      "sha256": "60e8348a9dea51ac09567210493c4769fd1ea7aad8f391ad09282fd216fb16ae"
     },
     {
       "path": "tools/song_catalog.py",
-      "bytes": 34247,
-      "sha256": "56f901bc69259f7a4bd0f00f6a22e729bce653fe4bfe46e3dd58294b060c5688"
+      "bytes": 34357,
+      "sha256": "2cdee78754569a21909b9a47ce8c2c40c7828faee0d76bf11f8d86835726be32"
     },
     {
       "path": "README.md",
@@ -253,8 +253,8 @@
     },
     {
       "path": "README-improvements.md",
-      "bytes": 3217,
-      "sha256": "766d94b1aebdab054cb511b0c6ae99130bf265a96ae5256ade9357322d3ebebb"
+      "bytes": 3299,
+      "sha256": "28d49077ae65f20900a0a480f1b19a685bde2f715481fee4351fe05913593263"
     },
     {
       "path": "src/base/ULibrarySearchIndex.pas",
@@ -345,6 +345,11 @@
       "path": "tests/fixtures/vocal-benchmark-results.json",
       "bytes": 308869,
       "sha256": "5cacc531234d1a4fde430a1622174ad51e724a405ce51b421e26a49f7d10a081"
+    },
+    {
+      "path": "tests/catalog/current-candidate-manifest.json",
+      "sha256": "8c18c8f6457fdacdabcc9b93717c2b87fadb6f567d9c86ad418cf2c3cedf7a87",
+      "bytes": 2151
     }
   ],
   "source_hash_normalization": "CRLF normalized to LF",
@@ -408,5 +413,13 @@
     "game_e2e": "Normal synthetic singing 9000/9000 note points; +4-semitone and digital silence each0; unpitched rap9000. Actual SDL/OpenGL, dummy playback output.",
     "release_sha256": "c5b7ad44ad4d03639e6bfb2822a5323280b2c65091dcf32f65f2c462c0d36d57",
     "limitations": "Recorded benchmark excludes line bonuses/beat clock; normal capture44.1kHz; no physical microphone, room, accompaniment bleed or hardware-latency validation."
+  },
+  "hidden_download_console_validation": {
+    "status": "passed",
+    "native_regressions": 6,
+    "offline_contract_tests": 43,
+    "expected_skip": 1,
+    "installed_tools": "yt-dlp, ffprobe and ffmpeg hidden launch smoke checks passed",
+    "scope": "No live YouTube download or user foreground-window interaction measured."
   }
 }

@@ -9,6 +9,14 @@ installed or packaged; without an explicit absolute interpreter and adapter
 pair the UI reports setup unavailable and starts no child. No live catalog
 request was made during its tests.
 
+Current Windows downloads launch yt-dlp and ffprobe with an explicitly hidden
+console (`CREATE_NEW_CONSOLE`, `STARTF_USESHOWWINDOW`, `SW_HIDE`). Wrapper and
+FFmpeg children inherit that console instead of opening a visible one. The
+existing Job ownership, bounded output and cancellation still apply. Other
+process-owner callers retain their default detached launch. A native regression
+checks that the root and an ordinary child share a non-visible console, and
+the cancellation regression exercises this hidden-console mode.
+
 ## Location and provenance
 
 `Makefile.in` already defines `USDXWP_TOOLS_DIR` as the repository's `tools`
@@ -27,7 +35,7 @@ the small UI/bridge described above. Both remain source-only and unbundled. Its 
 recorded as the previously reviewed source. The historical retained manifest
 and past receipts remain unchanged; `tests/catalog/current-candidate-manifest.json`
 separately pins the current candidate and offline contract-test source.
-A later correction makes detached launch avoid creation of a hidden
+A previous correction makes detached launch avoid creation of a hidden
 console-host Job member and includes raw counts in rejection messages.
 The lifetime-accounting predicate and cleanup rules are unchanged, and the
 historical retained test sources remain byte-identical.

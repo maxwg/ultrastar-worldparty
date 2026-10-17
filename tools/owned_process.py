@@ -40,8 +40,11 @@ ATTRIBUTE_HANDLE_LIST = 0x00020002
 ATTRIBUTE_JOB_LIST = 0x0002000D
 CREATE_SUSPENDED = 0x00000004
 DETACHED_PROCESS = 0x00000008
+CREATE_NEW_CONSOLE = 0x00000010
 EXTENDED_STARTUPINFO_PRESENT = 0x00080000
+STARTF_USESHOWWINDOW = 0x00000001
 STARTF_USESTDHANDLES = 0x100
+SW_HIDE = 0
 WAIT_OBJECT_0, WAIT_TIMEOUT, WAIT_FAILED = 0, 258, 0xFFFFFFFF
 CLEANUP_EXIT_CODE = 0xE0000001
 
@@ -305,7 +308,8 @@ class Result:
 
 def run_owned(argv: Sequence[str], *, cwd: str, timeout: float,
               stdout: str = "devnull", cancel: threading.Event | None = None,
-              cleanup_timeout: float = 3.0, max_output_bytes: int = 65536) -> Result:
+              cleanup_timeout: float = 3.0, max_output_bytes: int = 65536,
+              hidden_console: bool = False) -> Result:
     """Run one absolute executable; finish only after its entire Job is empty.
 
     Root exit also cleans remaining descendants. stdin is NUL; stdout/stderr
@@ -319,6 +323,8 @@ def run_owned(argv: Sequence[str], *, cwd: str, timeout: float,
     Live observed descendants retain handles until they signal. Short-lived
     descendants can exit between polls; zero active Job members after cleanup
     verifies that no owned process remains.
+    hidden_console gives CLI wrappers and their descendants an inherited hidden
+    console, preventing a detached wrapper's child from opening a visible one.
     """
     if isinstance(argv, (str, bytes)) or not argv or any(
             not isinstance(arg, str) or "\0" in arg for arg in argv):
@@ -329,6 +335,8 @@ def run_owned(argv: Sequence[str], *, cwd: str, timeout: float,
         raise ValueError("cwd must name an existing absolute directory")
     if stdout not in ("devnull", "inherit", "capture"):
         raise ValueError("stdout must be devnull, inherit, or capture")
+    if type(hidden_console) is not bool:
+        raise ValueError("hidden_console must be a boolean")
     if type(max_output_bytes) is not int or not 1 <= max_output_bytes <= 4 * 1024 * 1024:
         raise ValueError("max_output_bytes must be an integer from 1 through 4194304")
     if any(not math.isfinite(value) or value <= 0
@@ -375,13 +383,18 @@ def run_owned(argv: Sequence[str], *, cwd: str, timeout: float,
         startup.StartupInfo.hStdOutput = stdout_handle
         startup.StartupInfo.hStdError = stderr_handle
         startup.lpAttributeList = C.cast(attributes, C.c_void_p)
-        # Use the explicit NUL/pipe/file stdio without allocating a console.
-        # CREATE_NO_WINDOW can create a short-lived conhost Job member that
-        # exits between observations, correctly triggering lifetime rejection.
+        creation_flags = CREATE_SUSPENDED | EXTENDED_STARTUPINFO_PRESENT
+        if hidden_console:
+            startup.StartupInfo.dwFlags |= STARTF_USESHOWWINDOW
+            startup.StartupInfo.wShowWindow = SW_HIDE
+            creation_flags |= CREATE_NEW_CONSOLE
+        else:
+            creation_flags |= DETACHED_PROCESS
+        # Keep explicit NUL/pipe/file stdio and atomic ownership in either mode.
         # Windows requires a mutable command line, quoted from argv. No shell.
         command_line = C.create_unicode_buffer(subprocess.list2cmdline(list(argv)))
         _check(_create_process(argv[0], command_line, None, None, True,
-                                CREATE_SUSPENDED | DETACHED_PROCESS | EXTENDED_STARTUPINFO_PRESENT,
+                                creation_flags,
                                 None, cwd, C.byref(startup), C.byref(proc)),
                "CreateProcessW(atomic Job association)")
         child_created = True

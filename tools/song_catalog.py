@@ -425,7 +425,8 @@ def install_song(root, song_id, chart, url, cancelled, notify=emit, downloader='
             # Do not mix downloader output with the JSON-lines control protocol.
             # Windows shows the existing indeterminate download state.
             result = run_owned(args, cwd=str(stage), timeout=600,
-                               stdout='capture', cancel=cancelled, cleanup_timeout=3, max_output_bytes=262144)
+                               stdout='capture', cancel=cancelled, cleanup_timeout=3,
+                               max_output_bytes=262144, hidden_console=True)
             if result.reason != 'exited':
                 raise ValueError('Download cancelled or timed out.')
             returncode = result.returncode
@@ -460,7 +461,8 @@ def install_song(root, song_id, chart, url, cancelled, notify=emit, downloader='
         if os.name == 'nt':
             verification = run_owned(probe_args, cwd=str(stage), timeout=15,
                                      stdout='capture', cancel=cancelled,
-                                     cleanup_timeout=3, max_output_bytes=65536)
+                                     cleanup_timeout=3, max_output_bytes=65536,
+                                     hidden_console=True)
             if verification.reason != 'exited':
                 raise ValueError('Audio verification cancelled, timed out, or exceeded its output limit.')
         else:

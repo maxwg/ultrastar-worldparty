@@ -4,8 +4,8 @@
   "base_commit": "82734690dea474137f8e376ca29de20b1b53f2b1",
   "wire_protocol_version": 1,
   "backend_sha256": {
-    "song_catalog.py": "56f901bc69259f7a4bd0f00f6a22e729bce653fe4bfe46e3dd58294b060c5688",
-    "owned_process.py": "48c836edee311b3cdc258570b7d61913c2e1998951d905e72da4674231a7693a"
+    "song_catalog.py": "2cdee78754569a21909b9a47ce8c2c40c7828faee0d76bf11f8d86835726be32",
+    "owned_process.py": "60e8348a9dea51ac09567210493c4769fd1ea7aad8f391ad09282fd216fb16ae"
   },
   "test_contract_sha256": "ef0d047eadd9262f05780a6839d68cd211cd01a84e735d7c84472e053054989b",
   "retained_manifest_sha256": "1b2b4c0de65e8412b62d93b4cbe66686fd84b3429f130244e6fbcf957fa78b8b",
@@ -34,10 +34,20 @@
     },
     "native_job_regressions": {
       "status": "passed",
-      "test_count": 5,
-      "command": "python tests/catalog/test_job_cleanup.py"
+      "test_count": 6,
+      "command": "python tests/catalog/test_job_cleanup.py",
+      "scope": "Native hidden-console inheritance and visibility, cancellation/descendant cleanup, bounded output and stderr."
+    },
+    "native_hidden_tool_smoke": {
+      "status": "passed",
+      "tools": [
+        "yt-dlp --version",
+        "ffprobe -version",
+        "ffmpeg -version"
+      ],
+      "scope": "Installed executables, hidden console, captured output and Job cleanup; no live download."
     }
   },
-  "created_utc": "2026-10-17T09:08:13.137271+00:00",
+  "created_utc": "2026-10-17T18:25:10.211003+00:00",
   "source_hash_normalization": "CRLF normalized to LF"
 }
