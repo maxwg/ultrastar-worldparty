@@ -4,11 +4,12 @@ from pathlib import Path
 import shutil
 import sys
 import time
+import os
 
 signed_in = False
 downloads = 0
 root = Path(__file__).resolve().parent
-trace = (root / 'adapter-trace.txt').open('w', encoding='utf-8')
+trace = (root / 'adapter-trace.txt').open('a', encoding='utf-8')
 for line in sys.stdin:
     request = json.loads(line)
     op = request['op']
@@ -29,17 +30,22 @@ for line in sys.stdin:
         emit('login', ok=True, auth_state='signed_in'); emit('idle')
     elif op == 'search':
         songs = [dict(id=4242+i, artist='E2E', title='Remote Fixture '+str(i+1), language='English') for i in range(14)]
+        songs[0]['title'] = 'Remote Fixture ' + 'W'*35 + ' \u00e9\u00e0'
         # Keep the original fourteen rows and IDs first, then exercise both
         # local/remote and remote/remote title deduplication.
         songs.extend([
             dict(id=4256, artist='E2E', title='Local Fixture', language='English'),
-            dict(id=4257, artist='E2E', title='Remote Fixture 1', language='English'),
+            dict(id=4257, artist='E2E', title=songs[0]['title'], language='English'),
         ])
         emit('results', songs=songs); emit('idle')
     elif op == 'details':
         emit('details', id=request['id'], links=['https://www.youtube.com/watch?v=AAAAAAAAAAA','https://www.youtube.com/watch?v=BBBBBBBBBBB']); emit('idle')
     elif op == 'download':
         downloads += 1
+        if os.environ.get('ULTRASTAR_E2E_CANCEL') == '1':
+            (root/'download-active').touch()
+            time.sleep(60)  # The game must terminate this owned helper on Escape.
+        time.sleep(0.2)
         if downloads == 1:
             emit('error', code='download_failed', message='Fixture source unavailable.'); emit('idle')
         else:

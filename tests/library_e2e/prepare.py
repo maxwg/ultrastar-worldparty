@@ -6,6 +6,8 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import struct
+import zlib
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--repo', type=Path, required=True)
@@ -40,3 +42,28 @@ shutil.copy2(runtime/'fixture.mp4', runtime/'songs/LocalFixture/media.mp4')
 (runtime/'songs/LocalFixture/song.txt').write_text(chart.replace('Remote Fixture','Local Fixture'), encoding='utf-8')
 shutil.copy2(runtime/'fixture.mp4', runtime/'songs/LocalFixtureDuplicate/media.mp4')
 (runtime/'songs/LocalFixtureDuplicate/song.txt').write_text(chart.replace('Remote Fixture','Local Fixture'), encoding='utf-8')
+
+# Original abstract test covers include portrait and landscape art to catch crop
+# distortion and light backgrounds that could make card captions unreadable.
+def cover_png(path, width, height, palette):
+    def chunk(kind, data):
+        return struct.pack('!I', len(data)) + kind + data + struct.pack('!I', zlib.crc32(kind + data))
+    pixels = bytearray()
+    for y in range(height):
+        pixels.append(0)
+        for x in range(width):
+            t = (x / width + y / height) / 2
+            bright = ((x / width - .65) ** 2 + (y / height - .30) ** 2) < .065
+            pixels.extend(min(255, int(a * (1-t) + b * t) + (65 if bright else 0)) for a,b in zip(*palette))
+    path.write_bytes(b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('!2I5B', width, height, 8, 2, 0, 0, 0)) + chunk(b'IDAT', zlib.compress(pixels)) + chunk(b'IEND', b''))
+
+for index, title in enumerate(('Local Fixture', 'Fixture Sunrise', 'Fixture Night Drive', 'Fixture Live Session', 'Fixture Skyline', 'Fixture Acoustic')):
+    folder = runtime/'songs'/('VisualFixture'+str(index))
+    if index == 0:
+        folder = runtime/'songs/LocalFixture'
+    folder.mkdir(exist_ok=True)
+    shutil.copy2(runtime/'fixture.mp4', folder/'media.mp4')
+    width, height = ((320,320),(480,240),(240,480))[index % 3]
+    palette = (((130,40,100),(20,50,110)), ((240,170,80),(150,55,70)), ((30,160,180),(25,40,110)), ((230,200,150),(80,70,100)), ((90,150,220),(50,35,100)), ((60,170,130),(20,70,100)))[index]
+    cover_png(folder/'cover.png', width, height, palette)
+    (folder/'song.txt').write_text(chart.replace('Remote Fixture',title).replace('#ARTIST:E2E', '#COVER:cover.png\n#ARTIST:E2E'), encoding='utf-8')

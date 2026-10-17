@@ -930,7 +930,7 @@ begin
   begin FStatus := 'Credentials file is not available. Use an absolute path to an existing file.'; Exit; end;
   try
     FTransport.Start(PythonPath, AdapterPath, CredentialsPath);
-    FStatus := 'Starting catalog helper…';
+    FStatus := 'Starting catalog helper...';
     FPendingOp := 'status';
     FBusy := true;
     FPendingID := SendRequest('status', nil);
@@ -960,7 +960,7 @@ begin
     ClearDetails;
     FPendingOp := 'login'; FBusy := true;
     FAuthenticated := false;
-    FStatus := 'Signing in for this process only…';
+    FStatus := 'Signing in for this process only...';
     FErrorCode := '';
     try
       FPendingID := SendRequest('login', Fields);
@@ -989,7 +989,7 @@ begin
     ClearDetails;
     FPendingOp := 'login'; FBusy := true;
     FAuthenticated := false;
-    FStatus := 'Signing in for this process only…';
+    FStatus := 'Signing in for this process only...';
     FErrorCode := '';
     try
       FPendingID := SendRequest('login', Fields);
@@ -1020,7 +1020,7 @@ begin
     ClearResults;
     ClearDetails;
     FPendingOp := 'search'; FBusy := true;
-    FStatus := 'Searching catalog…';
+    FStatus := 'Searching catalog...';
     FErrorCode := '';
     try
       FPendingID := SendRequest('search', Fields);
@@ -1056,7 +1056,7 @@ begin
   FDetailReceived := false;
   FPendingOp := 'details';
   FBusy := true;
-  FStatus := 'Loading catalog source details…';
+  FStatus := 'Loading catalog source details...';
   FErrorCode := '';
   try
     // v1 requires an integer ID, not the text fields used by login/search.
@@ -1130,7 +1130,7 @@ begin
     try
       FTransport.SendLine(UTF8String(O.AsJSON));
       FCloseDeadline := GetTickCount64 + CCloseTimeoutMs;
-      FStatus := 'Closing catalog session…';
+      FStatus := 'Closing catalog session...';
     except
       FStatus := 'Catalog helper termination requested.';
       FTransport.TerminateOwned;
@@ -1335,7 +1335,7 @@ begin
           ParsedResults[I].Artist := UTF8String(Artist);
           ParsedResults[I].Title := UTF8String(Title);
           ParsedResults[I].Language := UTF8String(Lang);
-          Row := IntToStr(SongID) + '  ' + Artist + ' — ' + Title;
+          Row := IntToStr(SongID) + '  ' + Artist + ' - ' + Title;
           if Lang <> '' then Row := Row + '  [' + Lang + ']';
           ParsedRows.Add(Row);
         end;
@@ -1411,7 +1411,7 @@ begin
       begin FailProtocol('Download ended without an installed song.'); Exit; end;
       if (FPendingOp = 'details') and not FDetailReceived then
       begin FailProtocol('Catalog helper omitted its source details result.'); Exit; end;
-      if FStatus = 'Searching catalog…' then FStatus := 'Search complete.';
+      if FStatus = 'Searching catalog...' then FStatus := 'Search complete.';
       FinishPending(string(FStatus), '');
     end
     else

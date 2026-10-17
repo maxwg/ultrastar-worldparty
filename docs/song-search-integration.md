@@ -237,3 +237,19 @@ local/local, local/remote and remote/remote deduplication. Both fade modes pass,
 as do the 43-test contract suite (one platform skip), five native Job tests and
 Windows path checks. The clean release build succeeds. Physical microphone and
 speaker verification remains outside this synthetic-audio test.
+
+## Cover-card polish (2026-10-17)
+
+The grid now fits fifteen cards without section spacer cells. Cover art fills
+each card using centered cropping; a bottom gradient and pixel-measured text
+keep titles readable. Source badges distinguish local songs from USDB matches.
+One-click download shows the selected song and an activity indicator, with
+automatic fallback and playback. Escape cancels the active owned helper and
+restores search. Concise usage and installation paths are in
+`README-improvements.md`.
+
+Actual OpenGL grid, wrap, download and singing frames were inspected. The E2E
+harness covers six unique local charts, local/remote duplicates, fourteen new
+remote matches, long accented captions, both fade modes, and persistence after
+a fresh launch. A separate cancellation run leaves no installed chart and
+restores searchable results. Live USDB login/search/details/cache checks pass.

@@ -3,7 +3,8 @@ param(
   [Parameter(Mandatory=$true)][string]$CompilerRoot,
   [string]$PythonPath = (Get-Command python -ErrorAction Stop).Source,
   [string]$FfmpegPath = (Get-Command ffmpeg -ErrorAction Stop).Source,
-  [switch]$NoFade
+  [switch]$NoFade,
+  [switch]$CancelDownload
 )
 $ErrorActionPreference='Stop'
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
@@ -29,6 +30,8 @@ Push-Location (Join-Path $repo 'src')
 try { & $compiler @flags *> (Join-Path $root 'compile.log'); $code=$LASTEXITCODE }
 finally { Pop-Location }
 if($code -ne 0){Get-Content (Join-Path $root 'compile.log') -Tail 20;throw 'Test game compilation failed'}
-& $PythonPath (Join-Path $PSScriptRoot 'run.py') --runtime $runtime
+$runArguments=@((Join-Path $PSScriptRoot 'run.py'),'--runtime',$runtime)
+if($CancelDownload){$runArguments+='--cancel-download'}
+& $PythonPath @runArguments
 if($LASTEXITCODE -ne 0){throw 'End-to-end game verification failed'}
 Write-Output ('Evidence: '+$root)
