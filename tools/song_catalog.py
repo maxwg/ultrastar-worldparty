@@ -150,6 +150,44 @@ def require_song_id(request, context, *, versioned):
     return int(value)
 
 
+def resolve_login_credentials(request, context, credentials_path):
+    """Return (user, password) for a login operation without echoing secrets.
+
+    Typed user/password fields win. Otherwise the credentials come from the
+    credentials_file field, or from the adapter's own --credentials argument.
+    The file holds a small JSON object {"user": ..., "pass": ...}; values are
+    kept in process memory only and never returned in events."""
+    user = request.get('user')
+    password = request.get('password')
+    if user is not None or password is not None:
+        user = require_text(request, 'user', context, maximum=200, nonempty=True)
+        password = require_text(request, 'password', context, maximum=1024, nonempty=True)
+        return user, password
+    path = request.get('credentials_file')
+    if path is not None:
+        if not isinstance(path, str) or not path.strip() or len(path) > 4096:
+            raise ProtocolError('invalid_request', 'Invalid credentials_file field.', context)
+        credentials_path = path
+    if credentials_path is None:
+        raise ProtocolError('missing_credentials', 'Sign-in needs user/password or a credentials file.', context)
+    try:
+        with open(credentials_path, 'r', encoding='utf-8', errors='strict') as handle:
+            stored = json.load(handle)
+    except (OSError, UnicodeDecodeError):
+        raise ProtocolError('credentials_file_unreadable', 'Credentials file could not be read.', context)
+    except ValueError:
+        raise ProtocolError('credentials_file_invalid', 'Credentials file is not valid JSON.', context)
+    if not isinstance(stored, dict):
+        raise ProtocolError('credentials_file_invalid', 'Credentials file is not a JSON object.', context)
+    user = stored.get('user')
+    password = stored.get('pass', stored.get('password'))
+    if not isinstance(user, str) or not user or len(user) > 200:
+        raise ProtocolError('credentials_file_invalid', 'Credentials file has an invalid user field.', context)
+    if not isinstance(password, str) or not password or len(password) > 1024:
+        raise ProtocolError('credentials_file_invalid', 'Credentials file has an invalid password field.', context)
+    return user, password
+
+
 def login_required_page(document):
     return re.search(r'you are not logged in|please login', document, re.I) is not None
 
@@ -349,7 +387,17 @@ def install_song(root, song_id, chart, url, cancelled, notify=emit, downloader='
                 '-o', str(stage / 'media.mp4'), '--', url]
         # No cookie/password is passed to yt-dlp. Only the public media URL.
         if os.name == 'nt':
-            from owned_process import run_owned
+            # -I excludes the script directory. Load the trusted sibling by
+            # absolute path rather than relying on PATH or ambient sys.path.
+            import importlib.util
+            module_name = '_worldparty_owned_process'
+            owner = sys.modules.get(module_name)
+            if owner is None:
+                spec = importlib.util.spec_from_file_location(module_name, Path(__file__).resolve().with_name('owned_process.py'))
+                owner = importlib.util.module_from_spec(spec)
+                sys.modules[module_name] = owner
+                spec.loader.exec_module(owner)
+            run_owned = owner.run_owned
             # Do not mix downloader output with the JSON-lines control protocol.
             # Windows shows the existing indeterminate download state.
             result = run_owned(args, cwd=str(stage), timeout=600,
@@ -451,8 +499,11 @@ def operation_error_code(op, cancelled):
     return 'operation_failed'
 
 
-def main(downloads_enabled=False):
+def main(downloads_enabled=False, credentials_path=None):
     downloads_enabled = downloads_enabled is True
+    if credentials_path is not None:
+        if not isinstance(credentials_path, str) or not credentials_path.strip() or len(credentials_path) > 4096:
+            raise SystemExit('--credentials needs a readable path of at most 4096 characters.')
     catalog = Catalog()
     cancelled = DownloadControl()
     worker = None
@@ -466,8 +517,7 @@ def main(downloads_enabled=False):
         op = request.get('op')
         try:
             if op == 'login':
-                user = require_text(request, 'user', context, maximum=200, nonempty=True)
-                password = require_text(request, 'password', context, maximum=1024, nonempty=True)
+                user, password = resolve_login_credentials(request, context, credentials_path)
                 catalog.login(user, password)
                 emit('login', **context, ok=True, auth_state='signed_in')
             elif op == 'search':
@@ -485,7 +535,15 @@ def main(downloads_enabled=False):
                         raise ProtocolError('invalid_request', 'Invalid offset.', context)
                     if not 0 <= offset <= 2147483647:
                         raise ProtocolError('invalid_request', 'Invalid offset.', context)
-                songs = catalog.search(artist, title, offset)
+                query = require_text(request, 'query', context, maximum=200)
+                if query.strip():
+                    # One search box matches either artist or title, like the library.
+                    by_id = {}
+                    for row in catalog.search(query, '', offset) + catalog.search('', query, offset):
+                        by_id.setdefault(row['id'], row)
+                    songs = list(by_id.values())[:30]
+                else:
+                    songs = catalog.search(artist, title, offset)
                 emit('results', **context, songs=songs)
             elif op == 'details':
                 song_id = require_song_id(request, context, versioned=versioned)
@@ -624,5 +682,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='WorldParty JSON-lines catalog adapter.')
     parser.add_argument('--enable-downloads', action='store_true',
                         help='Explicitly enable the download capability for this process.')
+    parser.add_argument('--credentials', default=None,
+                        help='Path to a JSON credentials file {"user": ..., "pass": ...}; '
+                             'sign-in requests without typed fields use this file. '
+                             'The file content stays in process memory and never appears in events.')
     args = parser.parse_args()
-    main(downloads_enabled=args.enable_downloads)
+    main(downloads_enabled=args.enable_downloads, credentials_path=args.credentials)

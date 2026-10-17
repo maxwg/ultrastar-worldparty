@@ -70,6 +70,7 @@ type
       ScoreFile:  IPath;
       CatalogPython: string;
       CatalogAdapter: string;
+      CatalogCredentials: string;
 
       // pseudo integer values
       property Language:      integer read GetLanguage;
@@ -128,6 +129,7 @@ begin
   writeln('  '+ Fmt(cDebug) +' : Display Debugging info');
   writeln('  '+ Fmt('catalog-python') +' : Optional absolute Python executable for catalog search');
   writeln('  '+ Fmt('catalog-adapter') +' : Optional absolute catalog adapter script; required with catalog-python');
+  writeln('  '+ Fmt('catalog-credentials') +' : Optional absolute JSON credentials file {"user": ..., "pass": ...}; path stays out of config and logs');
   writeln;
 
   platform.halt;
@@ -156,6 +158,7 @@ begin
   ScoreFile   := PATH_NONE;
   CatalogPython := '';
   CatalogAdapter := '';
+  CatalogCredentials := '';
 end;
 
 {**
@@ -297,6 +300,12 @@ begin
       begin
         if (PCount > I) then
           CatalogAdapter := ParamStr(I + 1);
+      end
+
+      else if (Command = 'catalog-credentials') then
+      begin
+        if (PCount > I) then
+          CatalogCredentials := ParamStr(I + 1);
       end;
 
     end;

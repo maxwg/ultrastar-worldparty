@@ -172,6 +172,116 @@ class ParserAndProtocolTests(unittest.TestCase):
         self.assertEqual(status['setup_state'], 'ready')
         self.assertNotIn('fixture-password', output.getvalue())
 
+    def test_v1_login_resolves_credentials_file_without_echoing_secrets(self):
+        seen = {}
+        real_login = catalog.Catalog.login
+        real_emit = catalog.emit
+
+        def offline_login(instance, user, password):
+            seen[user] = password
+            with patch.object(instance, 'request', side_effect=['', '<form name="interpret"></form><input name="title">']):
+                real_login(instance, user, password)
+
+        request_ids = {}
+        for name in ('login-file', 'login-fallback', 'login-typed', 'login-badfile'):
+            request_ids[name] = threading.Event()
+
+        def observe_emit(kind, **data):
+            real_emit(kind, **data)
+            request_id = data.get('request_id')
+            if kind=='idle' and request_id in request_ids:
+                request_ids[request_id].set()
+
+        with tempfile.TemporaryDirectory() as scratch:
+            store = Path(scratch) / 'credentials.json'
+            store.write_text(json.dumps({'user': 'cred-user', 'pass': 'cred-pass'}), encoding='utf-8')
+            bogus = Path(scratch) / 'bogus.json'
+            bogus.write_text('not json at all', encoding='utf-8')
+
+            def requests():
+                yield json.dumps({'protocol_version':1,'request_id':'login-file','op':'login',
+                                  'credentials_file':str(store)})+'\n'
+                self.assertTrue(request_ids['login-file'].wait(2), 'credentials-file login did not finish')
+                yield json.dumps({'protocol_version':1,'request_id':'login-typed','op':'login',
+                                  'user':'typed-user','password':'typed-pass',
+                                  'credentials_file':str(store)})+'\n'
+                self.assertTrue(request_ids['login-typed'].wait(2), 'typed login did not finish')
+                # With --credentials configured, a bare login uses the startup file.
+                yield json.dumps({'protocol_version':1,'request_id':'login-fallback','op':'login'})+'\n'
+                self.assertTrue(request_ids['login-fallback'].wait(2), 'fallback login did not finish')
+                yield json.dumps({'protocol_version':1,'request_id':'login-badfile','op':'login',
+                                  'credentials_file':str(bogus)})+'\n'
+                self.assertTrue(request_ids['login-badfile'].wait(2), 'badfile login did not finish')
+                yield json.dumps({'op':'quit'})+'\n'
+
+            output = io.StringIO()
+            with patch.object(catalog.Catalog, 'login', offline_login), \
+                    patch.object(catalog, 'emit', observe_emit), \
+                    patch.object(sys, 'stdin', requests()), contextlib.redirect_stdout(output):
+                catalog.main(credentials_path=str(store))
+            events = [json.loads(line) for line in output.getvalue().splitlines()]
+            login_file = next(e for e in events if e.get('request_id')=='login-file')
+            login_typed = next(e for e in events if e.get('request_id')=='login-typed')
+            login_fallback = next(e for e in events if e.get('request_id')=='login-fallback')
+            self.assertEqual(login_file, {'type':'login','protocol_version':1,'request_id':'login-file',
+                                          'ok':True,'auth_state':'signed_in'})
+            self.assertEqual(login_typed, {'type':'login','protocol_version':1,'request_id':'login-typed',
+                                           'ok':True,'auth_state':'signed_in'})
+            self.assertEqual(login_fallback, {'type':'login','protocol_version':1,'request_id':'login-fallback',
+                                              'ok':True,'auth_state':'signed_in'})
+            self.assertEqual(seen.get('cred-user'), 'cred-pass')
+            self.assertEqual(seen.get('typed-user'), 'typed-pass')
+            self.assertNotIn('cred-pass', output.getvalue())
+            self.assertNotIn('typed-pass', output.getvalue())
+            error_bad = next(e for e in events if e.get('request_id')=='login-badfile' and e['type']=='error')
+            self.assertEqual(error_bad['code'], 'credentials_file_invalid')
+
+    def test_v1_login_credentials_file_error_codes(self):
+        real_emit = catalog.emit
+        done = {name: threading.Event() for name in
+                ('login-nopath', 'login-badpath', 'login-badjson', 'login-baduser', 'login-badpass')}
+
+        def observe_all(kind, **data):
+            real_emit(kind, **data)
+            request_id = data.get('request_id')
+            if kind=='idle' and request_id in done:
+                done[request_id].set()
+
+        with tempfile.TemporaryDirectory() as scratch:
+            badjson = Path(scratch) / 'bad.json'
+            badjson.write_text('[]', encoding='utf-8')
+            baduser = Path(scratch) / 'baduser.json'
+            baduser.write_text(json.dumps({'user': '', 'pass': 'cred-pass'}), encoding='utf-8')
+            badpass = Path(scratch) / 'badpass.json'
+            badpass.write_text(json.dumps({'user': 'cred-user', 'pass': 3}), encoding='utf-8')
+            missing_file = Path(scratch) / 'gone.json'
+
+            cases = [
+                ('login-nopath', {'op':'login'}, 'missing_credentials'),
+                ('login-badpath', {'op':'login','credentials_file':str(missing_file)}, 'credentials_file_unreadable'),
+                ('login-badjson', {'op':'login','credentials_file':str(badjson)}, 'credentials_file_invalid'),
+                ('login-baduser', {'op':'login','credentials_file':str(baduser)}, 'credentials_file_invalid'),
+                ('login-badpass', {'op':'login','credentials_file':str(badpass)}, 'credentials_file_invalid'),
+            ]
+
+            def requests():
+                for request_id, body, _ in cases:
+                    yield json.dumps({'protocol_version':1,'request_id':request_id, **body})+'\n'
+                    self.assertTrue(done[request_id].wait(2), request_id + ' did not finish')
+                yield json.dumps({'op':'quit'})+'\n'
+
+            output = io.StringIO()
+            with patch.object(catalog, 'emit', observe_all), \
+                    patch.object(sys, 'stdin', requests()), contextlib.redirect_stdout(output):
+                catalog.main()
+            events = [json.loads(line) for line in output.getvalue().splitlines()]
+            self.assertNotIn('cred-pass', output.getvalue())
+            for request_id, _, expected_code in cases:
+                with self.subTest(request_id=request_id):
+                    error = next((e for e in events if e.get('request_id')==request_id and e['type']=='error'), None)
+                    self.assertIsNotNone(error, 'no error event for ' + request_id)
+                    self.assertEqual(error['code'], expected_code)
+
     def test_failed_offline_login_clears_process_auth_state(self):
         instance = catalog.Catalog()
         instance.authenticated = True
@@ -570,6 +680,15 @@ class ParserAndProtocolTests(unittest.TestCase):
              'code':'operation_cancelled','message':'Download cancelled.'},
             {'type':'idle','protocol_version':1,'request_id':'download-cancelled'},
         ])
+
+    def test_unified_query_matches_artist_or_title_and_deduplicates_ids(self):
+        first = {'id':42,'artist':'Adele','title':'Hello','language':'en'}
+        second = {'id':43,'artist':'Someone','title':'Adele tribute','language':'en'}
+        with patch.object(catalog.Catalog, 'search', side_effect=[[first], [first, second]]) as search:
+            events = self.run_cli(json.dumps({'protocol_version':1,'request_id':'combined',
+                'op':'search','query':'Adele'})+'\n'+json.dumps({'op':'quit'})+'\n')
+        self.assertEqual(search.call_args_list, [unittest.mock.call('Adele', '', 0), unittest.mock.call('', 'Adele', 0)])
+        self.assertEqual(events[0]['songs'], [first, second])
 
 if __name__ == '__main__':
     result = unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.loadTestsFromTestCase(ParserAndProtocolTests))

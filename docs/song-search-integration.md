@@ -1,4 +1,46 @@
-# Experimental song-search integration
+# Song search integration
+
+## Installed Windows collection search (2026-10-17)
+
+Typing, F3, or the search icon in normal song selection opens the combined
+collection search as a four-column, two-row cover grid. Local artist/title
+matches appear first, followed by a separately aligned USDB section. Duplicate artist/title pairs are hidden using Unicode lowercasing,
+normalized whitespace and straight/curly apostrophe equivalence. Named versions
+such as `(Live)` remain distinct. No existing song files are deleted.
+
+Search is debounced for 500 ms and USDB searches artist OR title. The adapter
+returns a bounded first page, deduplicated by source ID; display rows also hide
+songs already present locally. Arrow keys navigate cards; PageUp/PageDown or
+the wheel change pages. Cards show local cover art, artist/title and source
+badges. Enter or a card click opens the local song or remote source details. F2 opens explicit sign-in.
+The idle session is kept in helper memory for this application's lifetime;
+passwords are cleared after submission and never written to configuration.
+
+A verified USDB source can be installed with D/Enter or its Download row. The
+integrated screen explicitly opts into the adapter's existing download support;
+the older developer metadata screen still does not. Media is staged outside
+the scanned songs folder, checked with ffprobe, and the chart is published last.
+The destination is the writable local game `songs` directory. Completion rescans
+and returns to song selection. Leaving during an operation terminates the owned
+helper; Windows downloader/probe descendants use non-inheritable kill-on-close
+Jobs. Interrupted staging is outside the library and cannot appear playable.
+
+Configure `[Catalog]` / `Python` and `Adapter` with absolute paths in the game
+config, or use the existing command-line overrides. Optional `Credentials`
+references an existing JSON credential file without copying its values. F2 then
+Enter signs in using that file when the typed fields are blank. yt-dlp and ffprobe must be
+available to the helper. No account is created automatically.
+
+Verification: full clean i386-win32 release compilation; 39 adapter tests (one
+existing POSIX-only skip), 375 bridge assertions, five identity assertions, and
+62 grid bounds/overlap/hit-target assertions. Saved credentials from the
+installed UltraStar CLI successfully authenticated through the live adapter:
+Adele returned seven results and source details returned two verified media
+links. Credential values were not printed or copied. Actual media installation
+and visual UI checks remain unverified; Windows UI activation returned access denied.
+
+## Historical metadata-only developer screen
+
 
 Reference inspected: martiinii/ultrastar-cli at
 85e549cca96c578e02e235db9a13e609d82fcb95 (MIT).
@@ -40,6 +82,15 @@ Requirements before calling this complete:
 - A visible account/setup-needed state; no automatic registration. UI sign-in
   is explicit and credentials are sent only to the child adapter over its local
   stdin request; there is no database/INI setting or logging of credentials.
+  Optional convenience: launching the game with `-catalog-credentials <path>`
+  (absolute JSON file holding `{"user": ..., "pass": ...}`) lets the song
+  catalog screen sign in with empty typed fields via a `credentials_file`
+  request field — only the file path travels, values are never echoed in
+  events, logs, or status, and typed entries still take precedence. The
+  adapter also accepts `--credentials <path>` at launch as a fallback for the
+  same file; unavailable files, bad JSON, or unusable fields fail closed with
+  the stable error codes `missing_credentials`, `credentials_file_unreadable`,
+  and `credentials_file_invalid`.
 - The helper is scoped to the screen's process lifetime. Hiding the screen queues
   a versioned quit with its own request ID, then immediately terminates that
   exact owned child; hide does not wait for network work and does not claim it
@@ -53,9 +104,15 @@ Requirements before calling this complete:
   The application source does not set a process-wide `SIGPIPE` disposition. On
   Windows the bridge requests `PIPE_NOWAIT` on the `TProcess` input pipe; if that
   anonymous-pipe mode is unsupported, startup fails closed. Windows
-  source-details validation currently fails for an escaped accented
-  song name (Beyonc\u00e9 becomes Beyonc? in the Win32 FPC 3.2.2 test).
-  This slice is not a completed Windows UI feature. The three pending-write
+  Win32 FPC 3.2.2 keeps escaped accented song names intact: the bridge
+  pre-decodes `\\uXXXX` escapes above U+007F into UTF-8 bytes, parses responses
+  with a temporary `DefaultSystemCodePage=CP_UTF8` window, and emits typed
+  request values as ASCII-only `\\uXXXX` JSON escapes. The full five-argument
+  bridge suite passes on i386-win32 (363 assertions, including the previously
+  failing escaped-accent typed-metadata checks), with a wire-level test
+  locking the single-escape contract for typed outbound values. Typed astral
+  characters in worst-case codepoints follow the same escape paths.
+  The three pending-write
   errors use explicit equality/or checks; a
   compiled portable regression exercises Win32 values 232, 997, and 536, while
   a source check ties the Windows branch to its named constants. This does not

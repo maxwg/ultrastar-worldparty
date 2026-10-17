@@ -753,6 +753,10 @@ begin
 end;
 
 function TAudioPlayback_Bass.InitializePlayback(): boolean;
+var
+  BassDeviceID: DWORD;
+  DeviceInfo: BASS_DEVICEINFO;
+  Initialized: boolean;
 begin
   Result := false;
 
@@ -768,7 +772,42 @@ begin
   // TODO: use BASS_DEVICE_LATENCY to determine the latency
   if not BASS_Init(-1, 44100, 0, 0, nil) then
   begin
-    Log.LogError('Could not initialize BASS', 'TAudioPlayback_Bass.InitializePlayback');
+    // Log the BASS error code and fall back to the enumerated output devices
+    // before giving up; a single driver (e.g. virtual audio) failing for the
+    // default device does not mean no usable device exists.
+    Log.LogError('Could not initialize BASS default device: ' + BassCore.ErrorGetString(),
+                 'TAudioPlayback_Bass.InitializePlayback');
+
+    // Enumerate and try every device (skip ID 0 = "no sound").
+    EnumDevices();
+    Initialized := false;
+    for BassDeviceID := 1 to High(DWORD) do
+    begin
+      if not BASS_GetDeviceInfo(BassDeviceID, DeviceInfo) then
+        Break; // end of device list
+      // do not retry the device that just failed as the default
+      if BASS_Init(BassDeviceID, 44100, 0, 0, nil) then
+      begin
+        Log.LogStatus('BASS initialized with fallback device ' + IntToStr(BassDeviceID) +
+                      ' (' + DeviceInfo.name + ')',
+                      'TAudioPlayback_Bass.InitializePlayback');
+        Initialized := true;
+        Break;
+      end;
+      Log.LogError('Could not initialize BASS device ' + IntToStr(BassDeviceID) +
+                   ' (' + DeviceInfo.name + '): ' + BassCore.ErrorGetString(),
+                   'TAudioPlayback_Bass.InitializePlayback');
+      BASS_Free;
+    end;
+
+    if not Initialized then
+    begin
+      Log.LogError('Could not initialize BASS with any output device',
+                   'TAudioPlayback_Bass.InitializePlayback');
+      Exit;
+    end;
+
+    Result := true;
     Exit;
   end;
 

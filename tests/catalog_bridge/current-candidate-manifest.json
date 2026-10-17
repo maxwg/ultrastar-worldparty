@@ -1,20 +1,20 @@
 {
   "schema_version": 1,
-  "candidate": "UltraStar developer-only catalog result selection and source-details UI",
-  "created_utc": "2026-10-16",
-  "base_checkpoint_commit": "5fd466fdb855c8d373db106c4f035e1302d7860b",
-  "base_checkpoint_tree": "1ec4c46318c89b51cfafbdb4715c0b015a7f1195",
-  "scope": "Cloud source-only candidate; downloads disabled; synthetic offline catalog tests only; Windows validation handed to user.",
+  "candidate": "Windows collection grid, USDB search/download controls and artist/title deduplication",
+  "created_utc": "2026-10-17T08:35:56.036524+00:00",
+  "base_checkpoint_commit": "8504109f158b1a09a4f8766f2be50d25b0a4ff2d",
+  "base_checkpoint_tree": "bd807c6b9147c1ee241203343c9633d86b13511d",
+  "scope": "Clean i386-win32 compilation, offline regressions and live authenticated USDB search/source details. Actual media installation and visual UI validation are unverified.",
   "files": [
     {
       "path": "docs/song-catalog-backend.md",
-      "bytes": 21533,
-      "sha256": "768a7db3546e3a34c67c48ca15c2260be3585f359fd29e663d26b5636744be50"
+      "bytes": 22595,
+      "sha256": "e8f56d1c74c74f7f29a6426f754cec6777b0cda1dc18b2bc0c16dec32df2ccad"
     },
     {
       "path": "docs/song-search-integration.md",
-      "bytes": 7591,
-      "sha256": "5621ca0ed9261ca7d01d9e14f2da518101bff72514cc0dbc2bb4e4c23eb750c2"
+      "bytes": 11304,
+      "sha256": "e48816ccc2df7e8260c8eab4d0b8b6190bda4f2febb5c8c524dd15786d444901"
     },
     {
       "path": "game/languages/English.ini",
@@ -28,23 +28,23 @@
     },
     {
       "path": "src/base/UCommandLine.pas",
-      "bytes": 8908,
-      "sha256": "c00642fd6d983e0f04f282d8e858f50a7fb2f689d771f2f378e8edc1956f6591"
+      "bytes": 9277,
+      "sha256": "830e947081eaad39ff01ba5dc6272629964af76f3e75569319f48b860c967dee"
     },
     {
       "path": "src/base/UGraphic.pas",
-      "bytes": 23361,
-      "sha256": "f48ad6e0366465a1313d6c80c8a94e58ce343ce08e86e478cf17969c7dafb7e2"
+      "bytes": 23404,
+      "sha256": "e0c20f55404aeccaa4a66480aaa6c93832b012b97df151bb2679b91cea52d8da"
     },
     {
-      "path": "src/screens/UScreenSongMenu.pas",
-      "bytes": 30284,
-      "sha256": "3c55b9123810811ce969854b18d9ae225289f48e31a1f79d22da5d46974ae39b"
+      "path": "src/base/ULibraryGridLayout.pas",
+      "bytes": 801,
+      "sha256": "2a54df9208935bcf841371592b46ef7d408113d5aae518ec36a27261f7a9ed27"
     },
     {
       "path": "src/base/USongCatalogBridge.pas",
-      "bytes": 39119,
-      "sha256": "607b73d070c59220ac96c35be2098f08925bfcbe3e4a25bc5e9a9bad83bdaa61"
+      "bytes": 51188,
+      "sha256": "b5138b0512dc1935b7386ee38058fbd56bdc9864ed097be6967a342440b06bc9"
     },
     {
       "path": "src/base/USongCatalogInput.pas",
@@ -57,19 +57,69 @@
       "sha256": "fe430b9ca9f641dbcbb46418732e6b6ad076853333805584e82cd258befca236"
     },
     {
+      "path": "src/base/USongCatalogSelection.pas",
+      "bytes": 5283,
+      "sha256": "9f0a07c31a21416cf3f4928a5e54d98bda47a47ab85338172a6fad2a58874086"
+    },
+    {
+      "path": "src/base/USongIdentity.pas",
+      "bytes": 865,
+      "sha256": "2c25ad0ffa466573da17359d0abbec6fb47b30ada1dac82a30a71c78a0a8256b"
+    },
+    {
+      "path": "src/base/USongs.pas",
+      "bytes": 21743,
+      "sha256": "9bfeffce713ed021833dc7254876273c59aae20f07ba03c3a17e2a198fc3df72"
+    },
+    {
+      "path": "src/media/UAudioPlayback_Bass.pas",
+      "bytes": 25173,
+      "sha256": "7d2d3e6147d6d1cd4e662d9c53c20621c040ad9825d4fe636289be17fb91e204"
+    },
+    {
+      "path": "src/screens/UScreenLibrarySearch.pas",
+      "bytes": 20623,
+      "sha256": "a50242ef7d3b6163edaebdff2922aab85d2f307b6a91e577258b31b01a6672bb"
+    },
+    {
+      "path": "src/screens/UScreenMain.pas",
+      "bytes": 9088,
+      "sha256": "7cde604f5f9dd7fe217853e661272ba2ce27fa0c9e20bae91137af6d0238a156"
+    },
+    {
+      "path": "src/screens/UScreenOptionsMicrophones.pas",
+      "bytes": 25589,
+      "sha256": "3adc14128e685999051ed126d1658daf53958bc105d5ba147d7f6f46c0d1f34b"
+    },
+    {
+      "path": "src/screens/UScreenSong.pas",
+      "bytes": 96819,
+      "sha256": "e6264f21d42117e099cddb2305062176fbcfe2c4837cd958363cc36d5b2a292c"
+    },
+    {
       "path": "src/screens/UScreenSongCatalog.pas",
-      "bytes": 14569,
-      "sha256": "b2a1500ac7649fb41cf4cc6cc7eaf9427ea34ad5280ed6dcd0446a5267fda832"
+      "bytes": 15063,
+      "sha256": "f8f487ed7e0249f1bed3c65fdee828d6d73ad188dbf443d3819bc7c6ebc368d5"
+    },
+    {
+      "path": "src/screens/UScreenSongMenu.pas",
+      "bytes": 30284,
+      "sha256": "3c55b9123810811ce969854b18d9ae225289f48e31a1f79d22da5d46974ae39b"
     },
     {
       "path": "tests/catalog_bridge/catalog_bridge_test.pas",
-      "bytes": 49382,
-      "sha256": "a077a0bb8a066f02af87929b5a469694459c948a039f424f7aee2638956ac75f"
+      "bytes": 58105,
+      "sha256": "9e42f0a32f8e0a2e64ecda159cc5cb93bab26168ef81fc0566a7aafc13e825bb"
     },
     {
       "path": "tests/catalog_bridge/catalog_pipe_error_expression_test.pas",
       "bytes": 1061,
       "sha256": "23a99145002beba0ae30f5c408813db74cedd575a6122c39f5dc6bfb731f24f6"
+    },
+    {
+      "path": "tests/catalog_bridge/catalog_selection_test.pas",
+      "bytes": 7801,
+      "sha256": "e2c9ed506c0394b9af0e07f4f84c8fa78a6cea6cdf7b58b83368f1565afa0867"
     },
     {
       "path": "tests/catalog_bridge/catalog_ui_helpers_test.pas",
@@ -102,20 +152,36 @@
       "sha256": "1005a0de7ec6f40ef6fc45643c998eb7fd751be0ac656042b7a2ae117db4039e"
     },
     {
-      "path": "src/base/USongCatalogSelection.pas",
-      "bytes": 5283,
-      "sha256": "9f0a07c31a21416cf3f4928a5e54d98bda47a47ab85338172a6fad2a58874086"
+      "path": "tests/library_grid_test.pas",
+      "bytes": 952,
+      "sha256": "3201fd37c7f774652b5b0dadc9ee8a27413b16a54e56bbbee327a9a735cf668f"
     },
     {
-      "path": "tests/catalog_bridge/catalog_selection_test.pas",
-      "bytes": 7801,
-      "sha256": "e2c9ed506c0394b9af0e07f4f84c8fa78a6cea6cdf7b58b83368f1565afa0867"
+      "path": "tests/song_identity_test.pas",
+      "bytes": 796,
+      "sha256": "3efd6f8e895e9c4f39f3ae782dde0a28c789c6f73bb6f71e45e4174b12e91a3e"
+    },
+    {
+      "path": "tools/build_windows.ps1",
+      "bytes": 1437,
+      "sha256": "0d94e6ddf198b17936eadc34d49847cb3a760c66aea57ec37bcbe460fd6c5531"
+    },
+    {
+      "path": "tools/owned_process.py",
+      "bytes": 21003,
+      "sha256": "9f6f62813541fa5f7e6a943e0be025727e76e697f0fa803930ee3fa702a91feb"
+    },
+    {
+      "path": "tools/song_catalog.py",
+      "bytes": 32362,
+      "sha256": "87db73e4c27dc797e50f90110675fbf2c8a6953f46ecffa8677bf50f597e354f"
     }
   ],
-  "offline_validation": {
-    "bridge_test": "PASS: 352 catalog bridge assertions",
+  "source_hash_normalization": "CRLF normalized to LF",
+  "historical_validation": {
+    "bridge_test": "PASS: 363 catalog bridge assertions (i386-win32, FPC 3.2.2; typed metadata preserves UTF-8 and colons; single-escape wire contract held for typed fields)",
     "layout_input_test": "PASS: layout bounds/non-overlap at 320x240, 640x480, 800x600, 1280x720, 1920x1080; UTF-8 input/truncation helpers",
-    "windows_path_check": "PASS: static path and pipe-expression checks only; Windows Unicode source-details regression is unresolved",
+    "windows_path_check": "PASS: static path and pipe-expression checks; Windows Unicode source-details regression resolved in this candidate",
     "transport_tests": "injected fake transport; real inert child; actual inert adapter status+quit; nonreader/full queue hide deadline; closed-stdin EPIPE/SIGPIPE containment; hidden-child reaped without further Poll; unrelated sentinel preserved",
     "test_python": "CPython 3.13.5 x64",
     "test_fpc": "Free Pascal 3.2.2 x86_64-linux",
@@ -125,12 +191,14 @@
       "output": "/tmp/ultrastar-root-review-aolfcf56/compile/bin/WorldParty"
     },
     "limitations": [
-      "Windows FPC 3.2.2 escaped accented metadata test fails; user owns Windows follow-up",
+      "Windows FPC 3.2.2 escaped accented metadata fixed: bridge pre-decodes non-ASCII JSON escapes then parses with DefaultSystemCodePage=CP_UTF8; full 5-argument i386-win32 suite passes",
       "Shift+Tab passes pure navigation tests and full compile, but has no SDL keyboard-injection runtime check",
       "No live catalog authentication, media download, physical microphone or Windows GUI verification",
+      "In-game Windows GUI sign-in is unverified; the adapter-level live login (typed and stored credentials file paths) succeeds against the real catalog endpoint",
       "Python 3.8 source floor is not a tested compatibility claim"
     ],
     "login_response_contract": "Missing ok, wrong-type ok, false/signed-in, and true/signed-out responses all fail closed; consistent ok:true/signed-in succeeds.",
+    "stored_credentials_contract": "-catalog-credentials passes an absolute JSON file path to the adapter argv; LoginStored sends only a credentials_file field (never user/password), refuses without configuration, and a missing file fails closed before transport start. Typed usernames/preferences retain single-escape \\uXXXX wire semantics.",
     "portable_windows_error_test": "PASS: FPC compiled explicit equality/or regression with ERROR_NO_DATA 232, ERROR_IO_PENDING 997, and ERROR_PIPE_LISTENING 536; all values tested",
     "selection_test": "PASS: 282 navigation assertions including reverse Tab and retained result/detail viewport",
     "runtime_smoke": {
@@ -139,5 +207,21 @@
       "scope": "Pre-Shift+Tab candidate; no real network or authentication; no leftover adapter after success/error scenarios",
       "evidence_root": "/tmp/ultrastar-source-details-smoke"
     }
+  },
+  "offline_validation": {
+    "bridge_test": "PASS: 375 i386-win32 assertions",
+    "adapter_contract": "PASS: 39 tests, one existing POSIX-only skip",
+    "identity_test": "PASS: 5 assertions",
+    "grid_test": "PASS: 62 bounds, overlap and hit-target assertions",
+    "windows_path_check": "PASS",
+    "full_build": "PASS: clean i386-win32 release build using tools/build_windows.ps1"
+  },
+  "live_validation": {
+    "authentication": "PASS: existing CLI credential file, no values copied or printed",
+    "query": "Adele",
+    "search_matches": 7,
+    "source_media_links": 2,
+    "actual_download": "not performed",
+    "visual_ui": "unverified: Windows UI activation access denied"
   }
 }

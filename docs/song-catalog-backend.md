@@ -120,6 +120,21 @@ nonblocking pipe. On hide the client queues quit and immediately terminates
 only its helper, so the UI does not claim that a quit acknowledgement arrived.
 The current adapter status/login/search paths do not start subprocesses.
 
+Optional sign-in convenience: `-catalog-credentials <absolute-path>` gives the
+bridge an absolute JSON credentials file; the game adds `--credentials <path>`
+to the adapter argv on start. The `login` operation then supports a
+`credentials_file` string field (absolute, at most 4096 characters) as an
+alternative to typed `user`/`password` keys; typed fields win when both are
+present, and a launch flag without typed fields uses the adapter's file. The
+file must contain `{"user": ..., "pass": ...}` with non-empty strings
+(user at most 200, password at most 1024 characters). Credential values are
+kept in the adapter's process memory (`session_scope` semantics) and are never
+echoed in events, logs, or status. Stable error codes: `missing_credentials`
+(no sign-in source), `credentials_file_unreadable` (missing or unreadable
+file), and `credentials_file_invalid` (non-JSON, non-object, or unusable
+fields). Only the file path is passed on the command line; credential values stay out
+of argv. The existing file is read only after the user requests sign-in.
+
 Every response event for an accepted, structurally valid v1 request, including
 results, progress, operation errors, and `idle`, carries the same
 `protocol_version` and `request_id`. Parser-level failures (malformed JSON,

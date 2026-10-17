@@ -68,7 +68,7 @@ uses
   UScreenDevelopers,
   USkins,
   UScreenSongMenu,
-  UScreenSongCatalog,
+  UScreenSongCatalog, UScreenLibrarySearch,
   {Party Screens}
   UScreenPartyNewRound,
   UScreenPartyScore,
@@ -705,6 +705,7 @@ end;
 { Free screen variables in all cases, with an instance or not }
 procedure UnloadScreens;
 begin
+  FreeLibrarySearch;
   FreeAndNil(ScreenMain);
   FreeAndNil(ScreenPlayerSelector);
   FreeAndNil(ScreenSong);

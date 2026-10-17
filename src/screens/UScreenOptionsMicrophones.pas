@@ -229,6 +229,8 @@ begin
   inherited Create;
 
   LoadFromTheme(Theme.OptionsMicrophones);
+  AddText(110, 99, 0, 15, 1, 1, 1, 'Choose an input, assign it to Player 1, then speak to test.');
+  AddText(70, 535, 0, 16, 1, 1, 1, 'Left / Right: change   Up / Down: move   Back: save and return');
 
   SetLength(DeviceNames, Length(AudioInputProcessor.DeviceList));
   for DeviceIndex := 0 to High(AudioInputProcessor.DeviceList) do
@@ -259,6 +261,20 @@ begin
     CurrentDeviceIndex := 0
   else
     CurrentDeviceIndex := -1;
+
+  // Reopen on the microphone already assigned to a player.
+  for DeviceIndex := 0 to High(VisibleDeviceIndices) do
+    if CurrentDeviceIndex >= 0 then
+    begin
+      InputDevice := AudioInputProcessor.DeviceList[VisibleDeviceIndices[DeviceIndex]];
+      InputDeviceCfg := @Ini.InputDeviceConfig[InputDevice.CfgIndex];
+      IsMapped := false;
+      for ChannelIndex := 0 to High(InputDeviceCfg.ChannelToPlayerMap) do
+        if InputDeviceCfg.ChannelToPlayerMap[ChannelIndex] <> CHANNEL_OFF then IsMapped := true;
+      if IsMapped then begin CurrentDeviceIndex := DeviceIndex; Break; end;
+    end;
+  if CurrentDeviceIndex < 0 then
+    AddText(70, 240, 0, 20, 1, 1, 1, 'No microphone found. Connect one and reopen this screen.');
 
   PreviewDeviceIndex := -1;
 
@@ -355,7 +371,7 @@ begin
   if (Length(VisibleDeviceIndices) > 0) then
     ExitButtonIID := MaxChannelCount + 4
   else
-    ExitButtonIID := 2;
+    ExitButtonIID := 0;
 
   // set focus
   Interaction := 0;

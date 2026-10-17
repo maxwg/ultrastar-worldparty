@@ -120,13 +120,13 @@ begin
                 Screen := @UGraphic.ScreenPartyOptions;
               end
             end;
-            2: //jukebox
+            2: // microphone setup in the former Listen tile
             begin
-              if not Assigned(UGraphic.ScreenJukeboxPlaylist) then //load the screens only the first time
-                UGraphic.ScreenJukeboxPlaylist := TScreenJukeboxPlaylist.Create();
-
-              if Self.CheckSongs() then
-                Screen := @UGraphic.ScreenJukeboxPlaylist;
+              FreeAndNil(UGraphic.ScreenOptionsMicrophones);
+              AudioInput.RefreshDevices;
+              UGraphic.ScreenOptionsMicrophones := TScreenOptionsMicrophones.Create();
+              UGraphic.ScreenOptionsMicrophones.ReturnToMain := true;
+              Screen := @UGraphic.ScreenOptionsMicrophones;
             end;
             3: //stats
             begin
@@ -145,14 +145,6 @@ begin
             end;
             5: //exit
               Result := false;
-            7: //microphone setup
-            begin
-              FreeAndNil(UGraphic.ScreenOptionsMicrophones);
-              AudioInput.RefreshDevices;
-              UGraphic.ScreenOptionsMicrophones := TScreenOptionsMicrophones.Create();
-              UGraphic.ScreenOptionsMicrophones.ReturnToMain := true;
-              Screen := @UGraphic.ScreenOptionsMicrophones;
-            end;
             6: //about
             begin
               if not Assigned(UGraphic.ScreenAbout) then //load the screens only the first time
@@ -181,7 +173,7 @@ end;
 constructor TScreenMain.Create();
 var
   MicButton: TThemeButton;
-  MicIndex: integer;
+
 begin
   inherited Create();
 {**
@@ -200,29 +192,22 @@ begin
 
   AddButton(Theme.Main.ButtonSolo);
   AddButton(Theme.Main.ButtonMulti);
-  AddButton(Theme.Main.ButtonJukebox);
+  MicButton := Theme.Options.ButtonMicrophones;
+  MicButton.X := Theme.Main.ButtonJukebox.X;
+  MicButton.Y := Theme.Main.ButtonJukebox.Y;
+  MicButton.W := Theme.Main.ButtonSolo.W;
+  MicButton.H := Theme.Main.ButtonSolo.H;
+  MicButton.SelectH := Theme.Main.ButtonSolo.SelectH;
+  MicButton.Parent := 0;
+  MicButton.Reflection := false;
+  AddButton(MicButton);
+  if Length(Button[2].Text) > 0 then Button[2].Text[0].Size := 0;
 
   AddButton(Theme.Main.ButtonStat);
   AddButton(Theme.Main.ButtonOptions);
   AddButton(Theme.Main.ButtonExit);
 
   AddButton(Theme.Main.ButtonAbout);
-  MicButton := Theme.Options.ButtonMicrophones;
-  MicButton.X := 165;
-  MicButton.Y := 510;
-  MicButton.W := 40;
-  MicButton.H := 48;
-  MicButton.SelectH := 40;
-  MicButton.Parent := 0;
-  MicButton.Reflection := false;
-  MicIndex := AddButton(MicButton);
-  if Length(Button[MicIndex].Text) > 0 then
-  begin
-    Button[MicIndex].Text[0].Text := 'Set up microphones';
-    Button[MicIndex].Text[0].X := 20;
-    Button[MicIndex].Text[0].Y := 55;
-    Button[MicIndex].Text[0].Size := 16;
-  end;
   Interaction := 0;
   Self.ReturnToSongScreenAfterLoadSongs := false;
 end;
@@ -272,7 +257,7 @@ end;
 procedure TScreenMain.SetInteraction(Num: integer);
 begin
   inherited SetInteraction(Num);
-  if Interaction = 7 then
+  if Interaction = 2 then
   begin
     Text[TextDescription].Text := 'Set up microphones';
     Text[TextDescriptionLong].Text := 'Choose a microphone, assign players and test your input.';

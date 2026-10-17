@@ -150,7 +150,7 @@ uses
   UMain,
   UNote,
   UPathUtils,
-  UUnicodeUtils;
+  UUnicodeUtils, USongIdentity;
 
 constructor TSongsParse.Create();
 begin
@@ -256,8 +256,10 @@ end;
 { Create a new thread to load songs and update main screen with progress }
 procedure TSongs.Execute();
 var
-  I, Processed: integer;
+  I, Processed, ParsedCount: integer;
   Song: TSong;
+  Identities: TStringList;
+  Identity: UTF8String;
 begin
   Log.BenchmarkStart(2);
   Log.LogStatus('Searching for songs', 'SongList');
@@ -284,7 +286,26 @@ begin
         Self.Threads[I].Terminate();
       end;
 
-      Log.LogStatus('Search complete: '+IntToStr(Processed)+' songs found ('+IntToStr(Processed - Self.SongList.Count)+' with errors)', 'SongList');
+      ParsedCount := SongList.Count;
+      // Keep one playable library entry per artist/title. Parser threads own
+      // the song objects; removing a list reference never deletes song files.
+      Identities := TStringList.Create;
+      try
+        Identities.Sorted := true;
+        Identities.CaseSensitive := true;
+        I := 0;
+        while I < SongList.Count do
+        begin
+          Song := TSong(SongList[I]);
+          Identity := SongIdentity(Song.Artist, Song.Title);
+          if (Trim(Song.Artist) <> '') and (Trim(Song.Title) <> '') and
+             (Identities.IndexOf(string(Identity)) >= 0) then
+            SongList.Delete(I)
+          else begin Identities.Add(string(Identity)); Inc(I); end;
+        end;
+      finally Identities.Free; end;
+
+      Log.LogStatus('Search complete: '+IntToStr(Processed)+' songs found ('+IntToStr(Processed - ParsedCount)+' with errors; '+IntToStr(ParsedCount - SongList.Count)+' duplicates hidden)', 'SongList');
       Self.ProgressSong.Folder := '';
       Self.ProgressSong.Finished := true;
       Log.LogBenchmark('Song loading', 2);

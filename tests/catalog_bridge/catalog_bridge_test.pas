@@ -9,14 +9,14 @@ type
   public
     Active: boolean;
     Terminated: boolean;
-    StartedPython, StartedAdapter: string;
+    StartedPython, StartedAdapter, StartedCredentials: string;
     Requests: TStringList;
     Incoming: UTF8String;
     Failure: string;
     FailWrites: boolean;
     constructor Create;
     destructor Destroy; override;
-    procedure Start(const PythonPath, AdapterPath: string); override;
+    procedure Start(const PythonPath, AdapterPath: string; const CredentialsPath: string = ''); override;
     procedure SendLine(const Line: UTF8String); override;
     function ReadAvailable(MaxBytes: integer): UTF8String; override;
     function Running: boolean; override;
@@ -50,10 +50,11 @@ begin
   inherited Destroy;
 end;
 
-procedure TFakeTransport.Start(const PythonPath, AdapterPath: string);
+procedure TFakeTransport.Start(const PythonPath, AdapterPath: string; const CredentialsPath: string);
 begin
   StartedPython := PythonPath;
   StartedAdapter := AdapterPath;
+  StartedCredentials := CredentialsPath;
   Active := true;
 end;
 
@@ -96,6 +97,28 @@ end;
 function ObjFromLine(const Line: string): TJSONObject;
 begin
   Result := TJSONObject(GetJSON(Line, true));
+end;
+
+function ContainsBytes(const Haystack, Needle: UTF8String): boolean;
+// Byte-level containment. Windows AnsiString Pos() re-encodes differently
+// codepage-tagged operands and can miss matching raw bytes, so compare the
+// payloads directly.
+var Position, Offset: integer;
+begin
+  Result := false;
+  if Length(Needle) = 0 then Exit(true);
+  if Length(Needle) > Length(Haystack) then Exit;
+  for Position := 1 to Length(Haystack) - Length(Needle) + 1 do
+  begin
+    Result := true;
+    for Offset := 0 to Length(Needle) - 1 do
+      if Haystack[Position + Offset] <> Needle[Offset + 1] then
+      begin
+        Result := false;
+        Break;
+      end;
+    if Result then Exit;
+  end;
 end;
 
 function RequestAt(T: TFakeTransport; Index: integer): TJSONObject;
@@ -741,7 +764,7 @@ begin
     Check((Pos('Beyonc', S.ResultItems[0].Artist) = 1) and
       (Length(S.ResultItems[0].Artist) = 8) and (S.ResultItems[0].Title = 'Part: 2'),
       'typed metadata preserves UTF-8 and colons independently of display formatting');
-    Check(Pos(RawByteString(S.ResultItems[0].Artist), RawByteString(S.Results[0])) > 0,
+    Check(ContainsBytes(S.Results[0], S.ResultItems[0].Artist),
       'display rows preserve the exact UTF-8 artist bytes from typed metadata');
     S.Results[0] := 'truncated display with no ID';
     DetailID := StartSelectedDetails(T, S);
@@ -951,6 +974,150 @@ begin
   finally S.Free; T.Free; end;
 end;
 
+procedure TestOutboundEscaping(const PythonPath, AdapterPath: string);
+// Locks the single-wire-escape contract: typed UTF-8 values reach the helper
+// as one layer of \uXXXX text, never as double-escaped literal backslash-u.
+// The raw request line is compared directly because the FPC win32 JSON
+// parser corrupts \uXXXX escapes above U+007F while decoding fixtures.
+var T: TFakeTransport; S: TCatalogSession; O: TJSONObject;
+  StatusID: string; RawLine: UTF8String; Raw: RawByteString; ArtistRaw: UTF8String;
+begin
+  T := TFakeTransport.Create;
+  S := TCatalogSession.Create(T, false);
+  try
+    Check(S.Start(PythonPath, AdapterPath), 'wire session starts');
+    O := RequestAt(T, 0);
+    try StatusID := O.Get('request_id', ''); finally O.Free; end;
+    T.Push(Format('{"type":"status","protocol_version":1,"request_id":"%s","auth_state":"signed_in","session_scope":"process_memory_only","busy":false,"capabilities":{"download":false}}'#10, [StatusID]));
+    S.Poll;
+    // 'Fa' + U+00E7 + 'ade Test': build the exact UTF-8 byte sequence and tag
+    // it CP_UTF8 without conversion so the bytes reach the bridge unaltered.
+    Raw := 'Fa' + AnsiChar(195) + AnsiChar(167) + 'ade Test';
+    SetCodePage(Raw, 65001, false);
+    ArtistRaw := UTF8String(Raw);
+    Check(S.Search(ArtistRaw, 'Fixture'), 'accented search request starts');
+    RawLine := T.Requests[T.Requests.Count - 1];
+    Check(ContainsBytes(RawLine, '{"protocol_version":1,"request_id":"worldparty-2","op":"search","artist":"Fa\u00E7ade Test","title":"Fixture"}'),
+      'accented artist reaches the wire as a single \uXXXX escape sequence');
+    Check(not ContainsBytes(RawLine, '\\u00E7'),
+      'accented artist is never double-escaped on the wire');
+  finally S.Free; T.Free; end;
+end;
+
+procedure TestStoredLogin(const PythonPath, AdapterPath: string);
+const
+  FixturePayload = '{"user":"fixture-user","pass":"fixture-pass"}';
+var
+  T: TFakeTransport; S: TCatalogSession; O: TJSONObject;
+  StatusID, LoginID: string; FixPath: string; Payload: RawByteString;
+begin
+  // Cases that need a real on-disk fixture.
+  FixPath := ExtractFilePath(ParamStr(0)) + 'bridge_fixture_credentials.json';
+  Payload := FixturePayload;
+  with TFileStream.Create(FixPath, fmCreate) do
+  try
+    if Length(Payload) > 0 then WriteBuffer(Payload[1], Length(Payload));
+  finally Free; end;
+  try
+    // Configured start forwards the credentials file to the transport argv.
+    T := TFakeTransport.Create;
+    S := TCatalogSession.Create(T, false);
+    try
+      Check(S.Start(PythonPath, AdapterPath, FixPath), 'stored-credentials session starts');
+      Check(T.StartedCredentials = FixPath, 'stored credentials reach the transport');
+      Check(S.StoredCredentials = FixPath, 'session remembers stored credentials');
+      O := RequestAt(T, 0);
+      try StatusID := O.Get('request_id', ''); finally O.Free; end;
+      T.Push(Format('{"type":"status","protocol_version":1,"request_id":"%s","auth_state":"signed_out","session_scope":"process_memory_only","busy":false,"capabilities":{"download":false}}'#10, [StatusID]));
+      S.Poll;
+      Check(not S.Authenticated and not S.Busy, 'stored session is signed out before login');
+      // LoginStored sends credentials_file only, never user/password values.
+      Check(S.LoginStored, 'stored login request starts');
+      O := RequestAt(T, 1);
+      try
+        LoginID := O.Get('request_id', '');
+        Check(O.Get('op', '') = 'login', 'stored login operation is login');
+        Check(O.Get('credentials_file', '') = FixPath, 'stored login references the credentials file');
+        Check(O.Get('user', '') = '', 'stored login sends no user field');
+        Check(O.Get('password', '') = '', 'stored login sends no password field');
+      finally O.Free; end;
+      T.Push(Format('{"type":"login","protocol_version":1,"request_id":"%s","ok":true,"auth_state":"signed_in"}'#10, [LoginID]));
+      S.Poll;
+      Check(S.Authenticated and (S.ErrorCode = '') and not S.Busy, 'stored login success authenticates the session');
+    finally S.Free; T.Free; end;
+
+    // Empty plain login still refuses to reach the helper.
+    T := TFakeTransport.Create;
+    S := TCatalogSession.Create(T, false);
+    try
+      Check(S.Start(PythonPath, AdapterPath), 'plain session starts');
+      O := RequestAt(T, 0);
+      try StatusID := O.Get('request_id', ''); finally O.Free; end;
+      T.Push(Format('{"type":"status","protocol_version":1,"request_id":"%s","auth_state":"signed_out","session_scope":"process_memory_only","busy":false,"capabilities":{"download":false}}'#10, [StatusID]));
+      S.Poll;
+      Check(S.StoredCredentials = '', 'plain session has no stored credentials');
+      Check(not S.LoginStored and (T.Requests.Count = 1), 'unconfigured stored login is refused');
+      Check((S.ErrorCode = '') and (Pos('credentials file', string(S.Status)) > 0),
+        'unconfigured stored login explains the missing credentials file');
+    finally S.Free; T.Free; end;
+
+    // A configured but missing file fails closed before transport start.
+    T := TFakeTransport.Create;
+    S := TCatalogSession.Create(T, false);
+    try
+      Check(not S.Start(PythonPath, AdapterPath, FixPath + '.missing'), 'missing credentials file session rejects');
+      Check(not T.Active, 'missing credentials file never starts the helper');
+      Check((S.ErrorCode = '') and (Pos('file is not available', string(S.Status)) > 0),
+        'missing credentials file session explains the unavailable file');
+    finally S.Free; T.Free; end;
+  finally
+    DeleteFile(FixPath);
+  end;
+end;
+
+procedure TestOptInDownload(const PythonPath, AdapterPath: string);
+var T: TFakeTransport; S: TCatalogSession; O: TJSONObject; ID, Root, Link: string;
+  procedure Reply(const Kind, Fields: string);
+  begin
+    T.Push('{"type":"' + Kind + '","protocol_version":1,"request_id":"' + ID + '"' + Fields + '}'#10);
+    S.Poll;
+  end;
+  procedure Latest;
+  begin
+    O := RequestAt(T, T.Requests.Count - 1);
+    try ID := O.Get('request_id', ''); finally O.Free; end;
+  end;
+begin
+  Root := ExpandFileName('fixture-library');
+  Link := 'https://www.youtube.com/watch?v=abcDEF123_-';
+  T := TFakeTransport.Create; S := TCatalogSession.Create(T, false);
+  try
+    S.AllowDownloads := true;
+    Check(S.Start(PythonPath, AdapterPath), 'opt-in session starts'); Latest;
+    Reply('status', ',"auth_state":"signed_in","session_scope":"process_memory_only","busy":false,"capabilities":{"details":true,"download":true}');
+    Check(S.DownloadsEnabled, 'explicit opt-in accepts download capability');
+    SeedCurrentResults(T, S);
+    ID := StartSelectedDetails(T, S);
+    Reply('details', ',"id":2147483648,"links":["' + Link + '"]'); Reply('idle', '');
+    Check(not S.DownloadSong(2147483648, 'https://example.com', Root), 'unverified source rejected');
+    Check(not S.DownloadSong(99, Link, Root), 'wrong selected chart rejected');
+    Check(not S.DownloadSong(2147483648, Link, 'relative'), 'relative install root rejected');
+    Check(S.DownloadSong(2147483648, Link, Root), 'explicit source download starts'); Latest;
+    Check(not S.DownloadSong(2147483648, Link, Root), 'double click cannot start second download');
+    Reply('progress', ',"percent":30');
+    Check(S.Busy and (S.ErrorCode = ''), 'download progress keeps session alive');
+    O := TJSONObject.Create;
+    try
+      O.Add('type', 'installed'); O.Add('protocol_version', 1); O.Add('request_id', ID);
+      O.Add('id', Int64(2147483648));
+      O.Add('folder', IncludeTrailingPathDelimiter(Root) + 'USDB-2147483648');
+      T.Push(UTF8String(O.AsJSON) + #10); S.Poll;
+    finally O.Free; end;
+    Reply('idle', '');
+    Check(not S.Busy and (S.InstalledFolder <> '') and (S.ErrorCode = ''), 'correlated install completes');
+  finally S.Free; T.Free; end;
+end;
+
 var PythonPath, AdapterPath: string;
 begin
   if (ParamCount = 3) and (ParamStr(3) = '--source-details-regression') then
@@ -993,6 +1160,9 @@ begin
   TestWrongEventKind(PythonPath, AdapterPath);
   TestReauthenticationFailure(PythonPath, AdapterPath);
   TestInvalidLoginResponses(PythonPath, AdapterPath);
+  TestStoredLogin(PythonPath, AdapterPath);
+  TestOutboundEscaping(PythonPath, AdapterPath);
+  TestOptInDownload(PythonPath, AdapterPath);
   TestUnsafeCapability(PythonPath, AdapterPath);
   TestBusyError(PythonPath, AdapterPath);
   TestMalformedJSONTypes(PythonPath, AdapterPath);

@@ -4,7 +4,7 @@ unit USongCatalogBridge;
 
 interface
 
-uses Classes, SysUtils;
+uses Classes, SysUtils, Variants;
 
 type
   TCatalogSearchResult = record
@@ -15,7 +15,7 @@ type
 
   TCatalogTransport = class
   public
-    procedure Start(const PythonPath, AdapterPath: string); virtual; abstract;
+    procedure Start(const PythonPath, AdapterPath: string; const CredentialsPath: string = ''); virtual; abstract;
     procedure SendLine(const Line: UTF8String); virtual; abstract;
     function ReadAvailable(MaxBytes: integer): UTF8String; virtual; abstract;
     function Running: boolean; virtual; abstract;
@@ -26,6 +26,7 @@ type
   TCatalogProcessTransport = class(TCatalogTransport)
   private
     FProcess: TObject;
+    FEnableDownloads: boolean;
     FStarted: boolean;
     FTerminated: boolean;
     FWriteQueue: UTF8String;
@@ -38,13 +39,14 @@ type
   public
     constructor Create;
     destructor Destroy; override;
-    procedure Start(const PythonPath, AdapterPath: string); override;
+    procedure Start(const PythonPath, AdapterPath: string; const CredentialsPath: string = ''); override;
     procedure SendLine(const Line: UTF8String); override;
     function ReadAvailable(MaxBytes: integer): UTF8String; override;
     function Running: boolean; override;
     procedure TerminateOwned; override;
     function FailureMessage: string; override;
     function OwnedProcessID: integer;
+    property EnableDownloads: boolean read FEnableDownloads write FEnableDownloads;
   end;
 
   TCatalogSession = class
@@ -63,6 +65,10 @@ type
     FSessionReady: boolean;
     FDetailsCapability: boolean;
     FDownloadCapability: boolean;
+    FAllowDownloads: boolean;
+    FInstalledFolder, FInstallRoot: string;
+    FInstallReceived: boolean;
+    FCredentialsPath: string;
     FStatus: UTF8String;
     FErrorCode: string;
     FResults: TStringList;
@@ -86,10 +92,14 @@ type
   public
     constructor Create(Transport: TCatalogTransport; OwnsTransport: boolean = false);
     destructor Destroy; override;
-    function Start(const PythonPath, AdapterPath: string): boolean;
+    function Start(const PythonPath, AdapterPath: string; const CredentialsPath: string = ''): boolean;
     function Login(const Username, Password: UTF8String): boolean;
-    function Search(const Artist, Title: UTF8String): boolean;
+    function LoginStored: boolean;
+    function Search(const Artist, Title: UTF8String; const Query: UTF8String = ''): boolean;
     function Details(SongID: Int64): boolean;
+    function DownloadSong(SongID: Int64; const URL, Root: string): boolean;
+    property AllowDownloads: boolean read FAllowDownloads write FAllowDownloads;
+    property InstalledFolder: string read FInstalledFolder;
     procedure Close;
     procedure ForceTerminate;
     procedure Poll;
@@ -98,6 +108,7 @@ type
     property ErrorCode: string read FErrorCode;
     property Authenticated: boolean read FAuthenticated;
     property DownloadsEnabled: boolean read FDownloadCapability;
+    property StoredCredentials: string read FCredentialsPath;
     property Busy: boolean read FBusy;
     property Closing: boolean read FClosing;
     property HelperRunning: boolean read GetHelperRunning;
@@ -216,15 +227,219 @@ begin
             FileExists(PythonPath) and FileExists(AdapterPath);
 end;
 
+// Only the shape of the credentials path is validated here. Missing files,
+// bad JSON payloads, or unusable fields surface through the adapter's error
+// events so secret values never travel through status strings.
+function CatalogStoredCredentialsReady(const CredentialsPath: string): boolean;
+begin
+  Result := (CredentialsPath <> '') and IsAbsoluteCatalogPath(CredentialsPath) and
+            FileExists(CredentialsPath);
+end;
+
+
+function UTF8ScalarEncode(OutText: PUTF8String; CP: UInt32): integer;
+begin
+  Result := 0;
+  if CP < $80 then
+  begin
+    OutText^ := OutText^ + UTF8String(AnsiChar(Byte(CP)));
+    Result := 1;
+  end
+  else if CP < $800 then
+  begin
+    OutText^ := OutText^ + UTF8String(AnsiChar(Byte($C0 or (CP shr 6)))) +
+                UTF8String(AnsiChar(Byte($80 or (CP and $3F))));
+    Result := 2;
+  end
+  else if CP < $10000 then
+  begin
+    OutText^ := OutText^ + UTF8String(AnsiChar(Byte($E0 or (CP shr 12)))) +
+                UTF8String(AnsiChar(Byte($80 or ((CP shr 6) and $3F)))) +
+                UTF8String(AnsiChar(Byte($80 or (CP and $3F))));
+    Result := 3;
+  end
+  else
+  begin
+    OutText^ := OutText^ + UTF8String(AnsiChar(Byte($F0 or (CP shr 18)))) +
+                UTF8String(AnsiChar(Byte($80 or ((CP shr 12) and $3F)))) +
+                UTF8String(AnsiChar(Byte($80 or ((CP shr 6) and $3F)))) +
+                UTF8String(AnsiChar(Byte($80 or (CP and $3F))));
+    Result := 4;
+  end;
+end;
+
+function CatalogHexValue(const Chars: UTF8String; Index: integer; out Value: UInt32): boolean;
+var I, N: integer; Ch: AnsiChar;
+begin
+  Result := false;
+  Value := 0;
+  N := Length(Chars);
+  for I := 0 to 3 do
+  begin
+    if Index + I > N then Exit;
+    Ch := Chars[Index + I];
+    case Ch of
+      '0'..'9': Value := Value shl 4 or (Byte(Ord(Ch)) - Byte(Ord('0')));
+      'a'..'f': Value := Value shl 4 or (Byte(Ord(Ch)) - Byte(Ord('a')) + 10);
+      'A'..'F': Value := Value shl 4 or (Byte(Ord(Ch)) - Byte(Ord('A')) + 10);
+      else Exit;
+    end;
+  end;
+  Result := true;
+end;
+
+procedure CatalogUnescapeJSONUnicode(var Line: UTF8String);
+// FPC 3.2.2 Win32 jsonparser turns an escaped \u00E9 into '?' and raw UTF-8
+// bytes into mojibake. Pre-decode escapes for codepoints above U+007F into
+// real UTF-8 bytes so the parser only ever sees ASCII; keep ASCII-range
+// escapes (quotes, backslashes, control characters) untouched. Surrogate
+// pairs follow the JSON spec; lone surrogates become U+FFFD.
+var
+  I, N: integer;
+  OutText: UTF8String;
+  Low, High: UInt32;
+  Temp: UTF8String;
+begin
+  N := Length(Line);
+  I := 1;
+  OutText := '';
+  while I <= N do
+  begin
+    if (Line[I] <> '\') or (I + 5 > N) or (Line[I+1] <> 'u') then
+    begin
+      OutText := OutText + UTF8String(Line[I]);
+      Inc(I);
+      Continue;
+    end;
+    if not CatalogHexValue(Line, I + 2, High) then
+    begin
+      OutText := OutText + UTF8String(Line[I]);
+      Inc(I);
+      Continue;
+    end;
+    if High < $80 then // ASCII-range escapes stay for the parser to decode.
+    begin
+      OutText := OutText + UTF8String(Copy(Line, I, 6));
+      Inc(I, 6);
+      Continue;
+    end;
+    if (High >= $D800) and (High < $E000) then
+    begin
+      // surrogate: require the matching complementary escape
+      if (I + 11 <= N) and (Line[I+6] = '\') and (Line[I+7] = 'u') and
+         CatalogHexValue(Line, I + 8, Low) and
+         (((High >= $D800) and (High < $DC00) and (Low >= $DC00) and (Low < $E000)) or
+          ((High >= $DC00) and (High < $E000) and (Low >= $D800) and (Low < $DC00))) then
+      begin
+        Temp := '';
+        UTF8ScalarEncode(@Temp, $10000 + ((High - $D800) shl 10) + (Low - $DC00));
+        OutText := OutText + Temp;
+        Inc(I, 12);
+      end
+      else
+      begin
+        Temp := '';
+        UTF8ScalarEncode(@Temp, $FFFD);
+        OutText := OutText + Temp;
+        Inc(I, 6);
+      end;
+      Continue;
+    end;
+    Temp := '';
+    UTF8ScalarEncode(@Temp, High);
+    OutText := OutText + Temp;
+    Inc(I, 6);
+  end;
+  Line := OutText;
+end;
+
+function UTF8ScalarDecode(const Chars: UTF8String; var Index: integer; out CP: UInt32): boolean;
+var
+  N, Extra, K: integer;
+  C0: Byte;
+begin
+  Result := false;
+  CP := 0;
+  N := Length(Chars);
+  if Index > N then Exit(false);
+  C0 := Byte(Ord(Chars[Index]));
+  if (C0 and $80) = 0 then
+  begin
+    CP := C0; Extra := 0; Inc(Index);
+  end
+  else if (C0 and $E0) = $C0 then begin CP := C0 and $1F; Extra := 1; end
+  else if (C0 and $F0) = $E0 then begin CP := C0 and $0F; Extra := 2; end
+  else if (C0 and $F8) = $F0 then begin CP := C0 and $07; Extra := 3; end
+  else Exit(false); // invalid leading byte
+  if Extra > 0 then
+  begin
+    for K := 1 to Extra do
+    begin
+      if Index + K > N then Exit(false);
+      if (Byte(Ord(Chars[Index + K])) and $C0) <> $80 then Exit(false);
+      CP := (CP shl 6) or (Byte(Ord(Chars[Index + K])) and $3F);
+    end;
+    Inc(Index, Extra + 1);
+  end;
+  Result := true;
+end;
+
+function CatalogOutEscape(const Value: UTF8String): UTF8String;
+// Encode a UTF-8 string into an ASCII-only JSON string body on the wire.
+// Requests carry only pure-ASCII text on Windows ANSI runtimes where typed
+// string values would otherwise convert bytes through the system codepage.
+// BMP codepoints become \uXXXX escapes; astral codepoints become surrogate
+// pairs; ASCII quotes, backslashes, and control characters get JSON escapes.
+var
+  I: integer;
+  CP, High, Low: UInt32;
+  Body: UTF8String;
+begin
+  I := 1;
+  Body := '';
+  while I <= Length(Value) do
+  begin
+    if not UTF8ScalarDecode(Value, I, CP) then
+    begin
+      Body := Body + UTF8String(Copy(Value, I, 1));
+      Inc(I);
+      Continue;
+    end;
+    if CP = $22 then
+      Body := Body + UTF8String('\"')
+    else if CP = $5C then
+      Body := Body + UTF8String('\\')
+    else if (CP < $20) or (CP = $7F) then
+      Body := Body + UTF8String('\u' + IntToHex(CP, 4))
+    else if CP < $80 then
+      Body := Body + UTF8String(AnsiChar(Byte(CP)))
+    else if CP < $10000 then
+      Body := Body + UTF8String('\u' + IntToHex(CP, 4))
+    else
+    begin
+      High := $D800 + ((CP - $10000) shr 10);
+      Low := $DC00 + ((CP - $10000) and $3FF);
+      Body := Body + UTF8String('\u' + IntToHex(High, 4)) + UTF8String('\u' + IntToHex(Low, 4));
+    end;
+  end;
+  Result := Body;
+end;
+
+
 function JSONString(Obj: TJSONObject; const Key: string; out Value: UTF8String): boolean;
-var D: TJSONData;
+var D: TJSONData; RawValue: Variant;
 begin
   Value := '';
   D := Obj.Find(Key);
   Result := Assigned(D) and (D.JSONType = jtString);
-  // fpjson returns UTF8String. Keep that type at the boundary instead of
-  // implicitly converting escaped non-ASCII values through an ANSI string.
-  if Result then Value := D.AsString;
+  // The parser stores string values as UTF-8 bytes tagged CP_UTF8; reading
+  // them through the Variant property keeps those bytes without an ANSI
+  // codepage round trip.
+  if Result then
+  begin
+    RawValue := TJSONString(D).Value;
+    Value := UTF8String(RawValue);
+  end;
 end;
 
 function JSONInteger(Obj: TJSONObject; const Key: string; out Value: Int64): boolean;
@@ -332,7 +547,7 @@ begin
   {$ENDIF}
 end;
 
-procedure TCatalogProcessTransport.Start(const PythonPath, AdapterPath: string);
+procedure TCatalogProcessTransport.Start(const PythonPath, AdapterPath: string; const CredentialsPath: string);
 {$IFDEF FPC}
 var
   P: TProcess;
@@ -356,6 +571,14 @@ begin
     P.Parameters.Add('-S');
     P.Parameters.Add('-B');
     P.Parameters.Add(AdapterPath);
+    if FEnableDownloads then P.Parameters.Add('--enable-downloads');
+    if CredentialsPath <> '' then
+    begin
+      // Optional sign-in file. The adapter rejects relative or unreadable
+      // paths over its own protocol, so no secret ever lands in a status.
+      P.Parameters.Add('--credentials');
+      P.Parameters.Add(CredentialsPath);
+    end;
     P.Options := [poUsePipes, poNoConsole, poNewProcessGroup];
     P.Execute;
     {$IFDEF LINUX}
@@ -667,31 +890,30 @@ end;
 
 function TCatalogSession.SendRequest(const Op: string; Fields: TStrings; SongID: Int64): string;
 var
-  O: TJSONObject;
+  Text: UTF8String;
   I: integer;
-  Value: string;
 begin
-  Result := '';
-  O := TJSONObject.Create;
-  try
-    O.Add('protocol_version', 1);
-    Result := NewRequestID;
-    O.Add('request_id', Result);
-    O.Add('op', Op);
-    if SongID > 0 then O.Add('id', SongID);
-    if Assigned(Fields) then
-      for I := 0 to Fields.Count - 1 do
-      begin
-        Value := Fields.ValueFromIndex[I];
-        O.Add(Fields.Names[I], Value);
-      end;
-    FTransport.SendLine(UTF8String(O.AsJSON));
-  finally
-    O.Free;
-  end;
+  // Request bodies are built by hand and stay ASCII-only on the wire, so no
+  // Windows ANSI codepage conversion can alter a typed value. Field VALUES
+  // are pre-escaped by their own callers (Login, LoginStored, Search) into
+  // pure-ASCII \uXXXX text before the TStrings store can convert them;
+  // SendRequest escapes only keys, never the pre-escaped values.
+  Result := NewRequestID;
+  Text := '{"protocol_version":1,"request_id":"' +
+          CatalogOutEscape(UTF8String(Result)) + '","op":"' +
+          CatalogOutEscape(UTF8String(Op)) + '"';
+  if SongID > 0 then
+    Text := Text + ',"id":' + IntToStr(SongID);
+  if Assigned(Fields) then
+    for I := 0 to Fields.Count - 1 do
+      Text := Text + ',"' +
+              CatalogOutEscape(UTF8String(Fields.Names[I])) + '":"' +
+              UTF8String(Fields.ValueFromIndex[I]) + '"';
+  Text := Text + '}';
+  FTransport.SendLine(Text);
 end;
 
-function TCatalogSession.Start(const PythonPath, AdapterPath: string): boolean;
+function TCatalogSession.Start(const PythonPath, AdapterPath: string; const CredentialsPath: string): boolean;
 begin
   Result := false;
   if FBusy or FClosing or FTransport.Running then Exit;
@@ -699,12 +921,15 @@ begin
   FDetailsCapability := false;
   FAuthenticated := false;
   FErrorCode := '';
+  FCredentialsPath := CredentialsPath;
   ClearResults;
   ClearDetails;
   if not CatalogConfigurationReady(PythonPath, AdapterPath) then
   begin FStatus := 'Catalog search is not configured.'; Exit; end;
+  if (CredentialsPath <> '') and not CatalogStoredCredentialsReady(CredentialsPath) then
+  begin FStatus := 'Credentials file is not available. Use an absolute path to an existing file.'; Exit; end;
   try
-    FTransport.Start(PythonPath, AdapterPath);
+    FTransport.Start(PythonPath, AdapterPath, CredentialsPath);
     FStatus := 'Starting catalog helper…';
     FPendingOp := 'status';
     FBusy := true;
@@ -730,8 +955,8 @@ begin
   begin FStatus := 'Enter your existing catalog username and password.'; Exit; end;
   Fields := TStringList.Create;
   try
-    Fields.Values['user'] := string(Username);
-    Fields.Values['password'] := string(Password);
+    Fields.Values['user'] := string(CatalogOutEscape(Username));
+    Fields.Values['password'] := string(CatalogOutEscape(Password));
     ClearDetails;
     FPendingOp := 'login'; FBusy := true;
     FAuthenticated := false;
@@ -751,7 +976,36 @@ begin
   end;
 end;
 
-function TCatalogSession.Search(const Artist, Title: UTF8String): boolean;
+function TCatalogSession.LoginStored: boolean;
+var Fields: TStringList;
+begin
+  Result := false;
+  if not CanStartRequest then Exit;
+  if FCredentialsPath = '' then
+  begin FStatus := 'No catalog credentials file is configured.'; Exit; end;
+  Fields := TStringList.Create;
+  try
+    Fields.Values['credentials_file'] := string(CatalogOutEscape(UTF8String(FCredentialsPath)));
+    ClearDetails;
+    FPendingOp := 'login'; FBusy := true;
+    FAuthenticated := false;
+    FStatus := 'Signing in for this process only…';
+    FErrorCode := '';
+    try
+      FPendingID := SendRequest('login', Fields);
+      FPendingDeadline := GetTickCount64 + COperationTimeoutMs;
+      Result := true;
+    except
+      FinishPending('Could not send sign-in request.', 'request_write_failed');
+      FTransport.TerminateOwned;
+    end;
+  finally
+    Fields.Clear;
+    Fields.Free;
+  end;
+end;
+
+function TCatalogSession.Search(const Artist, Title: UTF8String; const Query: UTF8String): boolean;
 var Fields: TStringList;
 begin
   Result := false;
@@ -760,8 +1014,9 @@ begin
   begin FStatus := 'Sign in to the catalog in this session before searching.'; Exit; end;
   Fields := TStringList.Create;
   try
-    Fields.Values['artist'] := string(Artist);
-    Fields.Values['title'] := string(Title);
+    if Query <> '' then Fields.Values['query'] := string(CatalogOutEscape(Query));
+    Fields.Values['artist'] := string(CatalogOutEscape(Artist));
+    Fields.Values['title'] := string(CatalogOutEscape(Title));
     ClearResults;
     ClearDetails;
     FPendingOp := 'search'; FBusy := true;
@@ -812,6 +1067,35 @@ begin
     FinishPending('Could not send catalog source details request.', 'request_write_failed');
     FTransport.TerminateOwned;
   end;
+end;
+
+function TCatalogSession.DownloadSong(SongID: Int64; const URL, Root: string): boolean;
+var Fields: TStringList;
+begin
+  Result := false;
+  if not CanStartRequest then Exit;
+  if not FAuthenticated or not FDownloadCapability or
+     (SongID <> FDetailSongID) or (FDetailLinks.IndexOf(URL) < 0) or
+     not IsAbsoluteCatalogPath(Root) then Exit;
+  Fields := TStringList.Create;
+  try
+    Fields.Values['url'] := string(CatalogOutEscape(UTF8String(URL)));
+    Fields.Values['root'] := string(CatalogOutEscape(UTF8String(Root)));
+    FPendingSongID := SongID;
+    FInstallRoot := Root;
+    FInstallReceived := false;
+    FInstalledFolder := '';
+    FPendingOp := 'download'; FBusy := true;
+    FStatus := 'Downloading and verifying media...'; FErrorCode := '';
+    try
+      FPendingID := SendRequest('download', Fields, SongID);
+      FPendingDeadline := GetTickCount64 + 660000;
+      Result := true;
+    except
+      FinishPending('Could not send download request.', 'request_write_failed');
+      FTransport.TerminateOwned;
+    end;
+  finally Fields.Free; end;
 end;
 
 procedure TCatalogSession.Close;
@@ -916,6 +1200,9 @@ end;
 
 procedure TCatalogSession.ReceiveLine(const Line: UTF8String);
 var
+  Decoded: UTF8String;
+  Tagged: RawByteString;
+  OldCodePage: Word;
   Data: TJSONData;
   Obj, Caps, Song: TJSONObject;
   Songs, Links: TJSONArray;
@@ -928,11 +1215,26 @@ var
   ResultLimit: integer;
   SongID: Int64;
 begin
+  Decoded := Line;
+  CatalogUnescapeJSONUnicode(Decoded);
+  // The Win32 ANSI runtime makes UTF-8 content unusable for the FPC 3.2.2
+  // JSON scanner: text routed through String defaults to the system codepage
+  // and single \uXXXX escapes above U+007F collapse to '?'. Parse with the
+  // runtime codepage temporarily set to UTF-8 so both the String assignment
+  // and the scanner see exact UTF-8 bytes; ASCII-only payloads are unaffected.
+  Tagged := Decoded;
+  SetCodePage(Tagged, CP_UTF8, false);
+  OldCodePage := DefaultSystemCodePage;
+  DefaultSystemCodePage := CP_UTF8;
   try
-    Data := GetJSON(string(Line), true);
-  except
-    FailProtocol('Catalog helper sent an invalid response.');
-    Exit;
+    try
+      Data := GetJSON(string(Tagged), true);
+    except
+      FailProtocol('Catalog helper sent an invalid response.');
+      Exit;
+    end;
+  finally
+    DefaultSystemCodePage := OldCodePage;
   end;
   try
     try
@@ -979,7 +1281,7 @@ begin
       if not (Obj.Find('capabilities') is TJSONObject) then
       begin FailProtocol('Catalog helper omitted its capabilities.'); Exit; end;
       Caps := TJSONObject(Obj.Find('capabilities'));
-      if not JSONBoolean(Caps, 'download', Download) or Download then
+      if not JSONBoolean(Caps, 'download', Download) or (Download and not FAllowDownloads) then
       begin FailProtocol('Catalog helper unexpectedly enabled downloads.'); Exit; end;
       FDetailsCapability := false;
       if Assigned(Caps.Find('details')) and
@@ -987,7 +1289,7 @@ begin
       begin FailProtocol('Catalog helper returned an invalid details capability.'); Exit; end;
       FAuthenticated := State = 'signed_in';
       FSessionReady := true;
-      FDownloadCapability := false;
+      FDownloadCapability := Download and FAllowDownloads;
       if FAuthenticated then FStatus := 'Catalog session ready. Session exists only in memory.'
       else FStatus := 'Sign-in required. Session exists only in memory.';
       FinishPending(string(FStatus), '');
@@ -1039,7 +1341,7 @@ begin
         FResults.Assign(ParsedRows);
         FResultItems := ParsedResults;
       finally ParsedRows.Free; end;
-      FStatus := 'Metadata results only. Downloads are unavailable.';
+      FStatus := 'USDB results ready. Select a song to view download sources.';
     end
     else if EventType = 'details' then
     begin
@@ -1056,7 +1358,7 @@ begin
         begin
           if Links.Items[I].JSONType <> jtString then
           begin FailProtocol('Catalog helper returned an invalid source link.'); Exit; end;
-          Link := Links.Items[I].AsString;
+          Link := UTF8String(TJSONString(Links.Items[I]).Value);
           if not IsCatalogSourceLink(Link) then
           begin FailProtocol('Catalog helper returned an invalid source link.'); Exit; end;
           ParsedLinks.Add(Link);
@@ -1068,7 +1370,24 @@ begin
       if FDetailLinks.Count = 0 then
         FStatus := 'Source details loaded. No media links listed. Downloads are unavailable.'
       else
-        FStatus := 'Catalog source details loaded. Downloads are unavailable.';
+        FStatus := 'Source loaded. Choose Download to install this song.';
+    end
+    else if EventType = 'progress' then
+    begin
+      if FPendingOp <> 'download' then
+      begin FailProtocol('Unexpected download progress.'); Exit; end;
+      FStatus := 'Downloading and verifying media...';
+    end
+    else if EventType = 'installed' then
+    begin
+      if (FPendingOp <> 'download') or FInstallReceived or
+         not JSONInteger(Obj, 'id', SongID) or (SongID <> FPendingSongID) or
+         not JSONString(Obj, 'folder', Row) or
+         (ExpandFileName(string(Row)) <> ExpandFileName(IncludeTrailingPathDelimiter(FInstallRoot) + 'USDB-' + IntToStr(SongID))) then
+      begin FailProtocol('Invalid installed-song result.'); Exit; end;
+      FInstallReceived := true;
+      FInstalledFolder := string(Row);
+      FStatus := 'Installed. Return to your library to sing.';
     end
     else if EventType = 'error' then
     begin
@@ -1084,6 +1403,8 @@ begin
     end
     else if EventType = 'idle' then
     begin
+      if (FPendingOp = 'download') and not FInstallReceived then
+      begin FailProtocol('Download ended without an installed song.'); Exit; end;
       if (FPendingOp = 'details') and not FDetailReceived then
       begin FailProtocol('Catalog helper omitted its source details result.'); Exit; end;
       if FStatus = 'Searching catalog…' then FStatus := 'Search complete.';

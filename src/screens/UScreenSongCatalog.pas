@@ -119,7 +119,7 @@ begin
     Exit;
   end;
   FSession := TCatalogSession.Create(TCatalogProcessTransport.Create, true);
-  FReady := FSession.Start(Params.CatalogPython, Params.CatalogAdapter);
+  FReady := FSession.Start(Params.CatalogPython, Params.CatalogAdapter, Params.CatalogCredentials);
   UpdateView;
 end;
 
@@ -344,8 +344,18 @@ begin
           ResetCatalogSelection(FSelection, CatalogSearchFocus);
       caSignIn:
         begin
-          if Assigned(FSession) and FReady and FSession.Login(FUsername, FPassword) and
-             FSelection.InDetails then ReturnToCatalogResults(FSelection);
+          if Assigned(FSession) and FReady then
+          begin
+            if (FSession.StoredCredentials <> '') and (FUsername = '') and (FPassword = '') then
+            begin
+              // Convenience path: the credentials file was supplied at startup
+              // and empty fields were submitted, so sign in with the stored file.
+              if FSession.LoginStored and FSelection.InDetails then
+                ReturnToCatalogResults(FSelection);
+            end
+            else if FSession.Login(FUsername, FPassword) and FSelection.InDetails then
+              ReturnToCatalogResults(FSelection);
+          end;
           ClearPassword;
         end;
       caDetails:

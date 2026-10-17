@@ -248,7 +248,7 @@ uses
   USkins,
   UThemes,
   UTime,
-  UUnicodeUtils;
+  UUnicodeUtils, UScreenLibrarySearch;
 
 const
   ARTIST_RAIL_X = 260;
@@ -400,6 +400,15 @@ begin
   begin // Key Down
     SDL_ModState := SDL_GetModState and (KMOD_LSHIFT or KMOD_RSHIFT or KMOD_LCTRL or KMOD_RCTRL
       or KMOD_LALT or KMOD_RALT or KMOD_GUI or KMOD_MODE);
+    if (Self.Mode = smNormal) and Self.FreeListMode() and IsSearchTextCharacter(CharCode,
+      (SDL_ModState and (KMOD_CTRL or KMOD_ALT or KMOD_GUI)) <> 0,
+      (SDL_ModState and KMOD_MODE) <> 0) then
+    begin
+      OpenLibrarySearch(UCS4ToUTF8String(CharCode));
+      Exit;
+    end;
+    if (Self.Mode = smNormal) and Self.FreeListMode() and (PressedKey = SDLK_F3) then
+    begin OpenLibrarySearch(''); Exit; end;
     // Typing opens and focuses search. The first character jumps to an artist;
     // subsequent characters use the existing local title/artist filter.
     if
@@ -1992,6 +2001,7 @@ begin
   if not Self.FreeListMode() then
     Exit;
 
+  if Enable and (Mode = smNormal) then begin OpenLibrarySearch(''); Exit; end;
   if Enable and (USongs.CatSongs.GetVisibleSongs() <> 0) then
   begin
     Self.Text[Self.SearchTextPlaceholder].Visible := false;
