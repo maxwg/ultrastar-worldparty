@@ -37,7 +37,7 @@ uses
   SysUtils,
   UCommon,
   UMusic,
-  UIni, UPitchDisplay;
+  UIni, UPitchDisplay, UVoiceMonitor;
 
 const
   BaseToneFreq = 65.4064; // lowest (half-)tone to analyze (C2 = 65.4064 Hz)
@@ -51,6 +51,10 @@ type
       fAudioFormat: TAudioFormatInfo;
       fLastCaptureTick, fCaptureGeneration, fAnalyzedGeneration, fLastAnalysisTick: Cardinal;
       fPitchTracker: TPitchTracker;
+      fCaptureStartTick: Cardinal;
+      fMonitorState: TVoiceMonitorState;
+      fMonitorMusicRMS: Single;
+      fMonitorMicrophones: Integer;
 
       function GetToneString: string; // converts a tone to its string represenatation;
 
@@ -86,6 +90,7 @@ type
       procedure LockAnalysisBuffer();   {$IFDEF HasInline}inline;{$ENDIF}
       procedure UnlockAnalysisBuffer(); {$IFDEF HasInline}inline;{$ENDIF}
 
+      function CaptureAge: Cardinal;
       function MaxSampleVolume: single;
       property ToneString: string READ GetToneString;
       property AudioFormat: TAudioFormatInfo READ fAudioFormat;
@@ -134,7 +139,7 @@ type
 
       constructor Create;
       destructor Destroy; override;
-
+      procedure UpdateMonitorLevels;
       procedure UpdateInputDeviceConfig;
 
       {**
@@ -182,6 +187,7 @@ type
 
       procedure RefreshDevices;
       procedure HandleDeviceEvent(DeviceID: Cardinal; Added: boolean); virtual;
+      procedure CheckCaptureHealth; virtual;
       procedure CaptureStart;
       procedure CaptureStop;
   end;
@@ -255,6 +261,7 @@ begin
   fAnalysisBufferLock := SDL_CreateMutex();
   AnalysisBufferSize := Length(AnalysisBuffer);
   ResetPitchTracker(fPitchTracker);
+  fMonitorMusicRMS := -1; fMonitorMicrophones := 1;
 end;
 
 destructor TCaptureBuffer.Destroy;
@@ -262,7 +269,6 @@ begin
   FreeAndNil(LogBuffer);
   FreeAndNil(fVoiceStream);
   FreeAndNil(fAudioFormat);
-  SDL_UnlockMutex(fAnalysisBufferLock);
   SDL_DestroyMutex(fAnalysisBufferLock);
   fAnalysisBufferLock:=nil;
   inherited;
@@ -285,6 +291,8 @@ begin
   LockAnalysisBuffer();
   try
     fLastCaptureTick := 0;
+    fCaptureStartTick := SDL_GetTicks;
+    fMonitorState.Gain := 0;
     fCaptureGeneration := 0; fAnalyzedGeneration := 0; fLastAnalysisTick := 0;
     ResetPitchTracker(fPitchTracker);
     FillChar(ScorePitch, SizeOf(ScorePitch), 0);
@@ -304,13 +312,28 @@ var
   BufferOffset: integer;
   SampleCount:  integer;
   i:            integer;
+  Monitor: array[0..1023] of SmallInt;
+  MonitorOffset, MonitorCount, Frames: Integer;
 begin
-  // apply software boost
+  { Monitoring uses its own copy of unboosted audio. Neither monitor volume nor
+    the song-relative limiter may alter capture or pitch/scoring samples. }
+  if Assigned(fVoiceStream) and (AudioFormat.Format = asfS16) then
+  begin
+    Frames := BufferSize div SizeOf(SmallInt);
+    MonitorOffset := 0;
+    while MonitorOffset < Frames do
+    begin
+      MonitorCount := Min(Length(Monitor), Frames-MonitorOffset);
+      RenderVoiceMonitor(fMonitorState,
+        PMonitorSamples(@Buffer[MonitorOffset*SizeOf(SmallInt)]),
+        PMonitorSamples(@Monitor[0]), MonitorCount, AudioFormat.SampleRate,
+        fMonitorMusicRMS, EnsureRange(Ini.VoiceMonitorVolume, 0, 5)*0.1,
+        fMonitorMicrophones);
+      fVoiceStream.WriteData(PByteArray(@Monitor[0]), MonitorCount*SizeOf(SmallInt));
+      Inc(MonitorOffset, MonitorCount);
+    end;
+  end;
   BoostBuffer(Buffer, BufferSize);
-
-  // voice passthrough (send data to playback-device)
-  if (assigned(fVoiceStream)) then
-    fVoiceStream.WriteData(Buffer, BufferSize);
 
   // we assume that samples are in S16Int format
   // TODO: support float too
@@ -427,6 +450,17 @@ begin
   end;
 end;
 
+function TCaptureBuffer.CaptureAge: Cardinal;
+var LastTick: Cardinal;
+begin
+  LockAnalysisBuffer;
+  try
+    LastTick := fLastCaptureTick;
+    if LastTick = 0 then LastTick := fCaptureStartTick;
+  finally UnlockAnalysisBuffer; end;
+  Result := Cardinal(SDL_GetTicks-LastTick);
+end;
+
 function TCaptureBuffer.MaxSampleVolume: single;
 var
   lSampleIndex: integer;
@@ -497,6 +531,9 @@ end;
 
 procedure TCaptureBuffer.StartCapture(Format: TAudioFormatInfo);
 begin
+  fCaptureStartTick := SDL_GetTicks;
+  fMonitorState.Gain := 0;
+  fMonitorMusicRMS := -1;
   // free old audio-format info
   FreeAndNil(fAudioFormat);
   // copy the new input-device audio-format ...
@@ -754,6 +791,26 @@ begin
 end;
 
 { TAudioInputBase }
+
+procedure TAudioInputProcessor.UpdateMonitorLevels;
+var Level: Single; I, Mics: Integer;
+begin
+  if (Ini.VoicePassthrough <> 1) or (AudioPlayback = nil) then Exit;
+  { Main thread only: never lock or inspect the music decoder from capture. }
+  Level := AudioPlayback.GetMonitorLevel;
+  Mics := 0;
+  for I := 0 to High(Sound) do
+    if Assigned(Sound[I].fVoiceStream) then Inc(Mics);
+  for I := 0 to High(Sound) do
+  begin
+    Sound[I].fMonitorMusicRMS := Level;
+    Sound[I].fMonitorMicrophones := Max(1, Mics);
+  end;
+end;
+
+procedure TAudioInputBase.CheckCaptureHealth;
+begin
+end;
 
 procedure TAudioInputBase.RefreshDevices;
 begin

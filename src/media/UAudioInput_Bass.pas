@@ -45,6 +45,7 @@ uses
   UAudioCore_Bass,
   UTextEncoding,
   UCommon,    // (Note: for MakeLong on non-windows platforms)
+  sdl2,
   {$IFDEF MSWINDOWS}
   Windows,    // (Note: for MakeLong)
   {$ENDIF}
@@ -53,19 +54,28 @@ uses
 type
   TAudioInput_Bass = class(TAudioInputBase)
     private
+      fLastHealthCheck: Cardinal;
+      fHealthCheckStarted: boolean;
       function EnumDevices(): boolean;
     public
       function GetName: String; override;
       function InitializeRecord: boolean; override;
       function FinalizeRecord: boolean; override;
+      procedure CheckCaptureHealth; override;
   end;
 
   TBassInputDevice = class(TAudioInputDevice)
     private
       RecordStream: HSTREAM;
+      RecordInitialized: boolean;
       BassDeviceID: DWORD; // DeviceID used by BASS
+      RawDeviceName: AnsiString;
+      RawDeviceDriver: AnsiString;
       SingleIn: boolean;
 
+      function DeviceIdentityMatches: boolean;
+      function DeviceIdentityIsAmbiguous: boolean;
+      function SelectCaptureDevice: boolean;
       function SetInputSource(SourceIndex: integer): boolean;
       function GetInputSource(): integer;
     public
@@ -101,6 +111,58 @@ end;
 
 
 { TBassInputDevice }
+
+function TBassInputDevice.DeviceIdentityMatches(): boolean;
+var
+  DeviceInfo: BASS_DEVICEINFO;
+begin
+  FillChar(DeviceInfo, SizeOf(DeviceInfo), 0);
+  Result := BASS_RecordGetDeviceInfo(BassDeviceID, DeviceInfo) and
+    (DeviceInfo.name <> nil) and (AnsiString(DeviceInfo.name) = RawDeviceName);
+  if Result and (RawDeviceDriver <> '') then
+    Result := (DeviceInfo.driver <> nil) and
+      (AnsiString(DeviceInfo.driver) = RawDeviceDriver);
+end;
+
+function TBassInputDevice.DeviceIdentityIsAmbiguous(): boolean;
+var
+  i: integer;
+  OtherDevice: TBassInputDevice;
+begin
+  Result := False;
+  if RawDeviceName = '' then
+    Exit;
+
+  for i := 0 to High(AudioInputProcessor.DeviceList) do
+  begin
+    if AudioInputProcessor.DeviceList[i] = Self then
+      Continue;
+    if not (AudioInputProcessor.DeviceList[i] is TBassInputDevice) then
+      Continue;
+    OtherDevice := TBassInputDevice(AudioInputProcessor.DeviceList[i]);
+    if (OtherDevice.RawDeviceName = RawDeviceName) and
+      (OtherDevice.RawDeviceDriver = RawDeviceDriver) then
+      Exit(True);
+  end;
+end;
+
+function TBassInputDevice.SelectCaptureDevice(): boolean;
+begin
+  Result := false;
+  if not DeviceIdentityMatches() then
+  begin
+    Log.LogError('BASS capture device identity changed; refusing to select a different device',
+      'TBassInputDevice.SelectCaptureDevice');
+    Exit;
+  end;
+  if not BASS_RecordSetDevice(BassDeviceID) then
+  begin
+    Log.LogError('BASS_RecordSetDevice['+Name+']: ' + BassCore.ErrorGetString(),
+      'TBassInputDevice.SelectCaptureDevice');
+    Exit;
+  end;
+  Result := true;
+end;
 
 function TBassInputDevice.GetInputSource(): integer;
 var
@@ -182,10 +244,16 @@ function TBassInputDevice.Open(): boolean;
 var
   FormatFlags: DWORD;
   SourceIndex: integer;
-const
-  latency = 20; // 20ms callback period (= latency)
+  Latency: integer;
 begin
   Result := false;
+
+  if not DeviceIdentityMatches() then
+  begin
+    Log.LogError('BASS capture device identity changed; refusing to open a different device',
+      'TBassInputDevice.Open');
+    Exit;
+  end;
 
   if (not BASS_RecordInit(BassDeviceID)) then
   begin
@@ -193,21 +261,36 @@ begin
                  BassCore.ErrorGetString(), 'TBassInputDevice.Open');
     Exit;
   end;
+  RecordInitialized := true;
+
+  if not DeviceIdentityMatches() then
+  begin
+    Log.LogError('BASS capture device changed during initialization', 'TBassInputDevice.Open');
+    Close();
+    Exit;
+  end;
 
   if (not BassCore.ConvertAudioFormatToBASSFlags(AudioFormat.Format, FormatFlags)) then
   begin
     Log.LogError('Unhandled sample-format', 'TBassInputDevice.Open');
+    Close();
     Exit;
   end;
 
+  { Use BASS's callback period field, honoring explicit per-device settings. }
+  Latency := Ini.InputDeviceConfig[CfgIndex].Latency;
+  if Latency <= 0 then Latency := 10;
+  if Latency < 5 then Latency := 5;
+  if Latency > 100 then Latency := 100;
+
   // start capturing in paused state
   RecordStream := BASS_RecordStart(Round(AudioFormat.SampleRate), AudioFormat.Channels,
-                    MakeLong(FormatFlags or BASS_RECORD_PAUSE, latency),
+                    MakeLong(FormatFlags or BASS_RECORD_PAUSE, Latency),
                     @MicrophoneCallback, Self);
   if (RecordStream = 0) then
   begin
     Log.LogError('BASS_RecordStart: ' + BassCore.ErrorGetString(), 'TBassInputDevice.Open');
-    BASS_RecordFree;
+    Close();
     Exit;
   end;
 
@@ -234,8 +317,12 @@ begin
   Result := false;
 
   // recording already started -> stop first
-  if (RecordStream <> 0) then
-    Stop();
+  if ((RecordStream <> 0) or RecordInitialized) and not Stop() then
+  begin
+    Log.LogError('Unable to clean up the previous BASS capture before restart',
+      'TBassInputDevice.Start');
+    Exit;
+  end;
 
   // TODO: Do not open the device here (takes too much time).
   if not Open() then
@@ -244,6 +331,7 @@ begin
   if (not BASS_ChannelPlay(RecordStream, true)) then
   begin
     Log.LogError('BASS_ChannelPlay: ' + BassCore.ErrorGetString(), 'TBassInputDevice.Start');
+    Stop();
     Exit;
   end;
 
@@ -252,25 +340,49 @@ end;
 
 {* Stop input-capturing on this device. *}
 function TBassInputDevice.Stop(): boolean;
+var
+  DeviceSelected: boolean;
+  StopError: integer;
 begin
-  Result := false;
+  Result := true;
 
-  if (RecordStream = 0) then
-    Exit;
-  if (not BASS_RecordSetDevice(BassDeviceID)) then
-    Exit;
-
-  if (not BASS_ChannelStop(RecordStream)) then
+  { Stop the channel handle even if the device vanished or its ID was reused. }
+  if (RecordStream <> 0) and not BASS_ChannelStop(RecordStream) then
   begin
-    Log.LogError('BASS_ChannelStop: ' + BassCore.ErrorGetString(), 'TBassInputDevice.Stop');
+    StopError := BASS_ErrorGetCode();
+    { An invalid handle is already stopped; RecordFree below remains the cleanup check. }
+    if StopError <> BASS_ERROR_HANDLE then
+    begin
+      Log.LogError('BASS_ChannelStop: ' + BassCore.ErrorGetString(), 'TBassInputDevice.Stop');
+      Result := false;
+    end;
+  end;
+
+  if not RecordInitialized then
+    Exit;
+
+  DeviceSelected := SelectCaptureDevice();
+  if not DeviceSelected then
+  begin
+    { Do not free the currently selected, possibly unrelated BASS device. }
+    Result := false;
+    Exit;
   end;
 
   // TODO: Do not close the device here (takes too much time).
-  Result := Close();
+  if not Close() then Result := false;
 end;
 
 function TBassInputDevice.Close(): boolean;
 begin
+  Result := false;
+  if not RecordInitialized then
+  begin
+    RecordStream := 0;
+    Exit(true);
+  end;
+  if not SelectCaptureDevice() then Exit;
+
   // restore source selection
   if (SourceRestore >= 0) then
   begin
@@ -281,13 +393,14 @@ begin
   if (not BASS_RecordFree()) then
   begin
     Log.LogError('BASS_RecordFree: ' + BassCore.ErrorGetString(), 'TBassInputDevice.Close');
-    Result := false;
+    Exit;
   end
   else
   begin
     Result := true;
   end;
 
+  RecordInitialized := false;
   RecordStream := 0;
 end;
 
@@ -388,6 +501,14 @@ begin
       AudioInputProcessor.DeviceList[DeviceIndex] := BassDevice;
 
       BassDevice.BassDeviceID := BassDeviceID;
+      if DeviceInfo.name <> nil then
+        BassDevice.RawDeviceName := AnsiString(DeviceInfo.name)
+      else
+        BassDevice.RawDeviceName := '';
+      if DeviceInfo.driver <> nil then
+        BassDevice.RawDeviceDriver := AnsiString(DeviceInfo.driver)
+      else
+        BassDevice.RawDeviceDriver := '';
 
       // BASS device names seem to be encoded with local encoding
       // TODO: works for windows, check Linux + Mac OS X
@@ -509,6 +630,79 @@ function TAudioInput_Bass.FinalizeRecord(): boolean;
 begin
   CaptureStop;
   Result := inherited FinalizeRecord;
+end;
+
+procedure TAudioInput_Bass.CheckCaptureHealth;
+var
+  Tick: Cardinal;
+  DeviceIndex, ChannelIndex: Integer;
+  Device: TBassInputDevice;
+  HasLinkedChannel, AllChannelsStale, Recover: Boolean;
+  SameDevice, Stopped: Boolean;
+begin
+  Tick := SDL_GetTicks;
+  if fHealthCheckStarted and (Cardinal(Tick-fLastHealthCheck) < 2000) then
+    Exit;
+  fLastHealthCheck := Tick;
+  fHealthCheckStarted := True;
+
+  for DeviceIndex := 0 to High(AudioInputProcessor.DeviceList) do
+  begin
+    if not (AudioInputProcessor.DeviceList[DeviceIndex] is TBassInputDevice) then
+      Continue;
+    Device := TBassInputDevice(AudioInputProcessor.DeviceList[DeviceIndex]);
+    HasLinkedChannel := False;
+    AllChannelsStale := True;
+    for ChannelIndex := 0 to High(Device.CaptureChannel) do
+      if Assigned(Device.CaptureChannel[ChannelIndex]) then
+      begin
+        HasLinkedChannel := True;
+        if Device.CaptureChannel[ChannelIndex].CaptureAge < 1500 then
+          AllChannelsStale := False;
+      end;
+    if not HasLinkedChannel then
+      Continue;
+
+    Recover := Device.RecordStream = 0;
+    if not Recover then
+      Recover := BASS_ChannelIsActive(Device.RecordStream) = BASS_ACTIVE_STOPPED;
+    if not Recover then
+      Recover := AllChannelsStale;
+    if not Recover then
+      Continue;
+
+    SameDevice := Device.DeviceIdentityMatches() and
+      not Device.DeviceIdentityIsAmbiguous();
+    if SameDevice then
+      Log.LogStatus('BASS capture stalled; restarting ' + Device.Name,
+        'TAudioInput_Bass.CheckCaptureHealth')
+    else if Device.DeviceIdentityMatches() then
+      Log.LogError('BASS capture device identity is ambiguous; refusing automatic recovery',
+        'TAudioInput_Bass.CheckCaptureHealth')
+    else
+      Log.LogError('BASS capture device is missing or changed; refusing to reopen another input',
+        'TAudioInput_Bass.CheckCaptureHealth');
+
+    Stopped := Device.Stop();
+    for ChannelIndex := 0 to High(Device.CaptureChannel) do
+      if Assigned(Device.CaptureChannel[ChannelIndex]) then
+        Device.CaptureChannel[ChannelIndex].Clear;
+
+    if not SameDevice then
+      Continue;
+    if not Stopped then
+    begin
+      Log.LogError('BASS capture cleanup failed; restart deferred',
+        'TAudioInput_Bass.CheckCaptureHealth');
+      Continue;
+    end;
+    if Device.Start() then
+      Log.LogStatus('BASS capture restarted ' + Device.Name,
+        'TAudioInput_Bass.CheckCaptureHealth')
+    else
+      Log.LogError('BASS capture restart failed ' + Device.Name + ': ' + BassCore.ErrorGetString(),
+        'TAudioInput_Bass.CheckCaptureHealth');
+  end;
 end;
 
 

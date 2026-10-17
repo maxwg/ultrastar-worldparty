@@ -28,6 +28,8 @@
 - Stable thin pitch line by default; F7 restores thick bars, F8 shows true Hz/note.
 - One continuous detector for scoring and display, updated on fresh PCM every 20 ms.
 - Automatic mic sensitivity and short, same-note dropout grace; Easy stays forgiving.
+- Mic monitor volume in Options → Sound: 20% default, with a song-relative cap.
+- Short live audio queues, no monitor detuning/reset loop, and stalled-input recovery.
 - Real-vocal benchmark and production capture/scoring/render checks.
 - Existing artist navigation remains available.
 
@@ -59,3 +61,8 @@ and child-process ownership.
 Live USDB sign-in/search/cache and an actual media installation have been checked.
 Remote media availability can change. Automated playback uses dummy audio;
 physical microphone and speaker output still need a hardware check.
+
+Microphone monitoring has separate gain from scoring. Its combined RMS level is
+capped at half the backing track; quiet setup monitoring works without a song.
+See [microphone controls and recovery](docs/microphone-recovery.md) for tests and
+the remaining physical-device latency checks.

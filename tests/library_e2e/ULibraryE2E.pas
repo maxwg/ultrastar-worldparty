@@ -5,9 +5,9 @@ procedure LibraryE2ETick;
 procedure LibraryE2EFail(const MessageText: string);
 procedure LibraryE2ETrace(const MessageText: string);
 implementation
-uses SysUtils, Classes, Math, sdl2, UGraphic, UDisplay, USongs, UScreenSong,
-  UScreenLibrarySearch, UMusic, URecord, UIni, UNote, USong, UUnicodeUtils,
-  UPitchDisplay;
+uses SysUtils, Classes, IniFiles, Math, sdl2, UGraphic, UDisplay, USongs,
+  UScreenSong, UScreenOptions, UScreenOptionsSound, UScreenLibrarySearch, UMusic, URecord, UIni,
+  UNote, USong, UUnicodeUtils, UPitchDisplay;
 type
   TFakeInputDevice = class(TAudioInputDevice)
     function Start: Boolean; override;
@@ -30,6 +30,7 @@ var Phase: integer = 0; Started: QWord; Receipt: TextFile;
   SyntheticPhase, LastPlaybackPosition: Double;
   FirstNoteStart, FirstNoteEnd, SecondNoteStart, SecondNoteEnd: Double;
   PitchControlMode: string;
+  OriginalBackgroundMusicOption: Integer;
   SyntheticNoiseState: Cardinal;
   SyntheticCaptureActive, SawFirstPitch, SawSecondPitch: Boolean;
   SawFirstRawPitch, SawSecondRawPitch, SawAnyRawPitch: Boolean;
@@ -249,6 +250,7 @@ end;
 
 procedure LibraryE2ETick;
 var Query: UTF8String; Selected, Rows, Remote, I, Installed: integer; Busy, SignedIn: boolean; Marker: TextFile;
+    SavedSettings: TMemIniFile;
 begin
   if Started = 0 then begin
     Started := GetTickCount64;
@@ -406,9 +408,50 @@ begin
             [PitchControlMode, Player[0].Score + Player[0].ScoreGolden]));
           if Assigned(SyntheticBackend) then SyntheticBackend.CaptureStop;
           SyntheticCaptureActive := False;
-          FreeLibrarySearch; Note('PASS: helper cleanup'); CloseFile(Receipt); Halt(0);
+          if not Assigned(ScreenOptions) then
+            ScreenOptions := TScreenOptions.Create;
+          if not Assigned(ScreenOptionsSound) then
+            ScreenOptionsSound := TScreenOptionsSound.Create;
+          Display.CurrentScreen^.FadeTo(@ScreenOptionsSound);
+          Phase := 20;
+          Note('PASS: opened sound options after singing capture');
         end;
       end;
+    end;
+    20: if (Display.CurrentScreen = @ScreenOptionsSound) and not Assigned(Display.NextScreen) then begin
+      if Ini.VoicePassthrough <> 1 then Fail('fixture did not enable microphone monitoring');
+      if Ini.VoiceMonitorVolume <> 2 then Fail('fixture monitor volume did not load as 20%');
+      OriginalBackgroundMusicOption := Ini.BackgroundMusicOption;
+      Key(SDLK_DOWN); Key(SDLK_RIGHT); Phase := 21;
+    end;
+    21: if (Display.CurrentScreen = @ScreenOptionsSound) and not Assigned(Display.NextScreen) then begin
+      if (Ini.VoiceMonitorVolume <> 3) or (ScreenOptionsSound.Interaction <> 1) then
+        Fail('monitor volume selector did not advance from 20% to 30%');
+      Note('PASS: sound options monitor-volume selector advances and saves its selected value');
+      Key(SDLK_DOWN);
+      if OriginalBackgroundMusicOption = Ord(bmoOn) then Key(SDLK_LEFT)
+      else Key(SDLK_RIGHT);
+      Phase := 22;
+    end;
+    22: if (Display.CurrentScreen = @ScreenOptionsSound) and not Assigned(Display.NextScreen) then begin
+      if (Ini.BackgroundMusicOption = OriginalBackgroundMusicOption) or
+         (ScreenOptionsSound.Interaction <> 2) then
+        Fail('background music selector did not toggle at its shifted row');
+      Note('PASS: background music selector remains bound to its own row');
+      Display.SaveScreenShot; ScreenPopupInfo.Visible := False;
+      for I := 1 to 6 do Key(SDLK_DOWN);
+      Key(SDLK_RETURN); Phase := 23;
+    end;
+    23: if (Display.CurrentScreen = @ScreenOptions) and not Assigned(Display.NextScreen) then begin
+      SavedSettings := TMemIniFile.Create(Ini.Filename.ToNative);
+      try
+        if SavedSettings.ReadString('Sound', 'VoiceMonitorVolume', '') <> '30%' then
+          Fail('sound options exit did not persist VoiceMonitorVolume=30%');
+      finally
+        SavedSettings.Free;
+      end;
+      Note('PASS: sound options screenshot and 30% monitor setting persisted on exit');
+      FreeLibrarySearch; Note('PASS: helper cleanup'); CloseFile(Receipt); Halt(0);
     end;
   end;
 end;

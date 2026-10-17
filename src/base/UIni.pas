@@ -157,6 +157,7 @@ type
       ThresholdIndex: integer;
       AudioOutputBufferSizeIndex: integer;
       VoicePassthrough: integer;
+      VoiceMonitorVolume: integer;
       MusicAutoGain:  integer;
       SoundFont:      string;
 
@@ -323,6 +324,7 @@ const
   IThresholdVals:    array[0..4] of single  = (0.05, 0.10, 0.15, 0.20, 0.0012);
 
   IVoicePassthrough: array[0..1] of UTF8String  = ('Off', 'On');
+  IVoiceMonitorVolume: array[0..5] of UTF8String = ('0%', '10%', '20%', '30%', '40%', '50%');
 
   IMusicAutoGain:        array[0..3] of UTF8String  = ('Off', 'Soft', 'Medium', 'Hard');
   IMusicAutoGainVals:    array[0..3] of integer  = (-1, 0, 1, 2);
@@ -1020,6 +1022,9 @@ begin
   //AudioRepeat aka VoicePassthrough
   VoicePassthrough := ReadArrayIndex(IVoicePassthrough, IniFile, 'Sound', 'VoicePassthrough', 0);
 
+  // Voice monitor volume
+  VoiceMonitorVolume := ReadArrayIndex(IVoiceMonitorVolume, IniFile, 'Sound', 'VoiceMonitorVolume', 2);
+
   // ReplayGain aka MusicAutoGain
   MusicAutoGain := ReadArrayIndex(IMusicAutoGain, IniFile, 'Sound', 'MusicAutoGain', 0);
 
@@ -1238,6 +1243,9 @@ begin
 
   // VoicePasstrough
   IniFile.WriteString('Sound', 'VoicePassthrough', IVoicePassthrough[VoicePassthrough]);
+
+  // Voice monitor volume
+  IniFile.WriteString('Sound', 'VoiceMonitorVolume', IVoiceMonitorVolume[VoiceMonitorVolume]);
 
   // MusicAutoGain
   IniFile.WriteString('Sound', 'MusicAutoGain', IMusicAutoGain[MusicAutoGain]);

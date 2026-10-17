@@ -96,7 +96,7 @@ begin
 
   // second step: if we need more data, copy from the beginning of the buffer
   if (PartCount < Count) then
-    Move(RingBuffer[0], Buffer[0], Count-PartCount);
+    Move(RingBuffer[0], Buffer[PartCount], Count-PartCount);
 
   // mark the copied part of the buffer as free
   BufferCount := BufferCount - Count;

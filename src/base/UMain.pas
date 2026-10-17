@@ -307,6 +307,8 @@ begin
       CheckEvents;
 
       // display
+      if Assigned(AudioInput) then AudioInput.CheckCaptureHealth;
+      if Assigned(AudioPlayback) then AudioInputProcessor.UpdateMonitorLevels;
       Done := not Display.Draw;
       {$IFDEF LIBRARY_E2E} LibraryE2ETick; {$ENDIF}
       SwapBuffers;

@@ -30,12 +30,14 @@ type
   TAudioInput_SDL = class(TAudioInputBase)
     private
       Initialized: boolean;
+      LastHealthCheck: Cardinal;
       function EnumDevices(): boolean;
     public
       function GetName: string; override;
       function InitializeRecord: boolean; override;
       function FinalizeRecord: boolean; override;
       procedure HandleDeviceEvent(DeviceID: Cardinal; Added: boolean); override;
+      procedure CheckCaptureHealth; override;
   end;
 
   TSDLInputDevice = class(TAudioInputDevice)
@@ -73,7 +75,7 @@ begin
       callback := @MicrophoneCallback;
       userdata := pointer(Self);
 
-      samples := 0;
+      samples := 512;
       if Ini.InputDeviceConfig[CfgIndex].Latency > 0 then
         samples := 1 shl Round(Max(Log2(freq / 1000 * Ini.InputDeviceConfig[CfgIndex].Latency), 0));
     end;
@@ -85,8 +87,7 @@ begin
     DevID := SDL_OpenAudioDevice(devName, 1, @spec, @spec, 0);
     if DevID > 0 then
     begin
-      if Ini.InputDeviceConfig[CfgIndex].Latency > 0 then
-        Log.LogStatus('InputDevice "' + Name + '" opened with ' +
+      Log.LogStatus('InputDevice "' + Name + '" opened with ' +
                       IntToStr(spec.samples) + ' samples (' +
                       IntToStr(round(spec.samples * 1000 / spec.freq)) +
                       'ms) buffer', 'SDL');
@@ -227,6 +228,7 @@ begin
   // A full device enumeration is performed only when opening setup.
   for I := 0 to High(AudioInputProcessor.DeviceList) do
   begin
+    if not (AudioInputProcessor.DeviceList[I] is TSDLInputDevice) then Continue;
     Device := TSDLInputDevice(AudioInputProcessor.DeviceList[I]);
     if not Added then
     begin
@@ -251,6 +253,43 @@ begin
       if HasCapture and Device.Start then
         Log.LogStatus('Microphone reconnected: ' + Device.Name, 'SDL');
     end;
+  end;
+end;
+
+procedure TAudioInput_SDL.CheckCaptureHealth;
+var I, C, N, Matches: Integer; Device: TSDLInputDevice;
+  Linked, Stale: Boolean; DeviceName: PChar; Tick: Cardinal;
+begin
+  Tick := SDL_GetTicks;
+  if Cardinal(Tick-LastHealthCheck) < 2000 then Exit;
+  LastHealthCheck := Tick;
+  for I := 0 to High(AudioInputProcessor.DeviceList) do
+  begin
+    if not (AudioInputProcessor.DeviceList[I] is TSDLInputDevice) then Continue;
+    Device := TSDLInputDevice(AudioInputProcessor.DeviceList[I]);
+    if not Assigned(Device) or not Device.UseName then Continue;
+    Linked := False; Stale := True;
+    for C := 0 to High(Device.CaptureChannel) do
+      if Assigned(Device.CaptureChannel[C]) then
+      begin
+        Linked := True;
+        Stale := Stale and (Device.CaptureChannel[C].CaptureAge >= 1500);
+      end;
+    if not Linked then Continue;
+    if (Device.DevID <> 0) and not Stale and
+       (SDL_GetAudioDeviceStatus(Device.DevID) <> SDL_AUDIO_STOPPED) then Continue;
+    { Never replace a missing named microphone with a different/default input. }
+    Matches := 0;
+    for N := 0 to SDL_GetNumAudioDevices(1)-1 do
+    begin
+      DeviceName := SDL_GetAudioDeviceName(N, 1);
+      if (DeviceName <> nil) and (UTF8String(DeviceName) = Device.Name) then Inc(Matches);
+    end;
+    if Matches <> 1 then Continue;
+    Device.Stop;
+    for C := 0 to High(Device.CaptureChannel) do
+      if Assigned(Device.CaptureChannel[C]) then Device.CaptureChannel[C].Clear;
+    if Device.Start then Log.LogStatus('Microphone capture recovered: '+Device.Name, 'SDL');
   end;
 end;
 

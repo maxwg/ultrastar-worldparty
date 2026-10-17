@@ -35,7 +35,7 @@ uses
   Classes,
   sdl2,
   SysUtils,
-  URingBuffer,
+  URingBuffer, UVoiceMonitor,
   UMusic,
   UAudioPlaybackBase;
 
@@ -170,7 +170,7 @@ type
 type
   TGenericVoiceStream = class(TAudioVoiceStream)
     private
-      VoiceBuffer: TRingBuffer;
+      VoiceBuffer: TVoiceMonitorQueue;
       BufferLock: PSDL_Mutex;
       PlaybackStream: TGenericPlaybackStream;
       Engine: TAudioPlayback_SoftMixer;
@@ -188,8 +188,6 @@ type
 const
   SOURCE_BUFFER_FRAMES = 4096;
 
-const
-  MAX_VOICE_DELAY = 0.500; // 20ms
 
 implementation
 
@@ -406,7 +404,10 @@ begin
     Exit;
   end;
 
-  SourceBufferSize := SOURCE_BUFFER_FRAMES * SourceStream.GetAudioFormatInfo().FrameSize;
+  if SourceStream is TAudioVoiceStream then
+    SourceBufferSize := 256*SourceStream.GetAudioFormatInfo.FrameSize
+  else
+    SourceBufferSize := SOURCE_BUFFER_FRAMES*SourceStream.GetAudioFormatInfo.FrameSize;
   GetMem(SourceBuffer, SourceBufferSize);
   fVolume := 1.0;
 
@@ -1006,8 +1007,6 @@ begin
 end;
 
 function TGenericVoiceStream.Open(ChannelMap: integer; FormatInfo: TAudioFormatInfo): boolean;
-var
-  BufferSize: integer;
 begin
   Result := false;
 
@@ -1020,9 +1019,8 @@ begin
   // - use Self.FormatInfo instead of FormatInfo as the latter one might have a
   //   channel size of 2.
   // - the buffer-size must be a multiple of the FrameSize
-  BufferSize := (Ceil(MAX_VOICE_DELAY * Self.FormatInfo.BytesPerSec) div Self.FormatInfo.FrameSize) *
-                Self.FormatInfo.FrameSize;
-  VoiceBuffer := TRingBuffer.Create(BufferSize);
+  VoiceBuffer := TVoiceMonitorQueue.Create(Self.FormatInfo.SampleRate,
+    Self.FormatInfo.FrameSize);
 
   BufferLock := SDL_CreateMutex();
 
@@ -1032,7 +1030,7 @@ begin
   // link voice- and playback-stream
   if (not PlaybackStream.Open(Self)) then
   begin
-    PlaybackStream.Free;
+    FreeAndNil(PlaybackStream);
     Exit;
   end;
 

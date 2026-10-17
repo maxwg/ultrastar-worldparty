@@ -39,6 +39,7 @@ uses
   UMain,
   UMusic,
   UAudioPlaybackBase,
+  UVoiceMonitor,
   UAudioCore_Bass,
   ULog,
   sdl2,
@@ -98,13 +99,13 @@ type
       property EOF: boolean READ IsEOF;
   end;
 
-const
-  MAX_VOICE_DELAY = 0.020; // 20ms
 
 type
   TBassVoiceStream = class(TAudioVoiceStream)
     private
       Handle: HSTREAM;
+      VoiceBuffer: TVoiceMonitorQueue;
+      BufferLock: PSDL_Mutex;
     public
       function Open(ChannelMap: integer; FormatInfo: TAudioFormatInfo): boolean; override;
       procedure Close(); override;
@@ -606,24 +607,28 @@ end;
  * Returns the number of frames
  *}
 function TBassPlaybackStream.GetPCMData(var Data: TPCMData): Cardinal;
-var
-  Info: BASS_CHANNELINFO;
-  nBytes: DWORD;
+var Info: BASS_CHANNELINFO; Bytes: DWORD;
+  Samples: array[0..4095] of Single;
+  I, Frames, Channels, RightChannel: Integer;
 begin
   Result := 0;
-
-  FillChar(Data, SizeOf(TPCMData), 0);
-
-  // no support for non-stereo files at the moment
-  BASS_ChannelGetInfo(Handle, Info);
-  if (Info.chans <> 2) then
-    Exit;
-
-  nBytes := BASS_ChannelGetData(Handle, @Data, SizeOf(TPCMData));
-  if(nBytes <= 0) then
-    Result := 0
-  else
-    Result := nBytes div SizeOf(TPCMStereoSample);
+  FillChar(Data, SizeOf(Data), 0);
+  if not BASS_ChannelGetInfo(Handle, Info) then Exit;
+  Channels := Info.chans;
+  if (Channels < 1) or (Channels > 8) then Exit;
+  { Ask BASS for a consistent representation. Mono songs and float decoders
+    must not make the backing-track meter read silence or integer bit patterns. }
+  Bytes := BASS_ChannelGetData(Handle, @Samples,
+    (System.Length(Data)*Channels*SizeOf(Single)) or BASS_DATA_FLOAT);
+  if Bytes = DWORD(-1) then Exit;
+  Frames := Min(System.Length(Data), Bytes div (Channels*SizeOf(Single)));
+  RightChannel := Min(1, Channels-1);
+  for I := 0 to Frames-1 do
+  begin
+    Data[I][0] := Round(EnsureRange(Samples[I*Channels], -1, 1)*32767);
+    Data[I][1] := Round(EnsureRange(Samples[I*Channels+RightChannel], -1, 1)*32767);
+  end;
+  Result := Frames;
 end;
 
 function TBassPlaybackStream.GetAudioFormatInfo(): TAudioFormatInfo;
@@ -635,71 +640,62 @@ begin
 end;
 
 { TBassVoiceStream }
-function TBassVoiceStream.Open(ChannelMap: integer; FormatInfo: TAudioFormatInfo): boolean;
-var
-  Flags: DWORD;
-const
-  // prevent buffer underruns in BASS BASS_StreamPutData() sample output queue
-  // by stretching the input signal.
-  InputStretch = 0.01; // 1%
+function VoiceStreamHandler(handle: HSTREAM; buffer: Pointer; length: DWORD;
+  user: Pointer): DWORD; {$IFDEF MSWINDOWS}stdcall;{$ELSE}cdecl;{$ENDIF}
 begin
-  Result := false;
-
-  Close();
-
-  if (not inherited Open(ChannelMap, FormatInfo)) then
-    Exit;
-
-  // get channel flags
-  BassCore.ConvertAudioFormatToBASSFlags(FormatInfo.Format, Flags);
-
-  (*
-  // distribute the mics equally to both speakers
-  if ((ChannelMap and CHANNELMAP_LEFT) <> 0) then
-    Flags := Flags or BASS_SPEAKER_FRONTLEFT;
-  if ((ChannelMap and CHANNELMAP_RIGHT) <> 0) then
-    Flags := Flags or BASS_SPEAKER_FRONTRIGHT;
-  *)
-
-  // create the channel
-  Handle := BASS_StreamCreate(Round(FormatInfo.SampleRate * (1-InputStretch)),
-      1, Flags, STREAMPROC_PUSH, nil);
-
-  // start the channel
-  BASS_ChannelPlay(Handle, true);
-
-  Result := true;
+  Result := TBassVoiceStream(user).ReadData(buffer, length);
 end;
 
-procedure TBassVoiceStream.Close();
+function TBassVoiceStream.Open(ChannelMap: integer; FormatInfo: TAudioFormatInfo): boolean;
+var Flags: DWORD;
 begin
-  if (Handle <> 0) then
+  Result := false;
+  Close;
+  if not inherited Open(ChannelMap, FormatInfo) then Exit;
+  if not BassCore.ConvertAudioFormatToBASSFlags(Self.FormatInfo.Format, Flags) then Exit;
+  VoiceBuffer := TVoiceMonitorQueue.Create(Self.FormatInfo.SampleRate,
+    Self.FormatInfo.FrameSize);
+  BufferLock := SDL_CreateMutex;
+  { Pull live PCM at its original pitch. No detuning, push-buffer growth or
+    periodic stream restart. Underruns are silent and recover next callback. }
+  Handle := BASS_StreamCreate(Round(Self.FormatInfo.SampleRate), 1, Flags,
+    @VoiceStreamHandler, Self);
+  if Handle = 0 then Exit;
+  { Supported by the bundled BASS 2.4.12: bypass the song-sized playback queue. }
+  if not BASS_ChannelSetAttribute(Handle, BASS_ATTRIB_NOBUFFER, 1) then
+    Log.LogStatus('Microphone monitor low-latency mode unavailable', 'BASS');
+  Result := BASS_ChannelPlay(Handle, false);
+end;
+
+procedure TBassVoiceStream.Close;
+begin
+  if Handle <> 0 then
   begin
     BASS_ChannelStop(Handle);
     BASS_StreamFree(Handle);
+    Handle := 0;
   end;
-  inherited Close();
+  FreeAndNil(VoiceBuffer);
+  if BufferLock <> nil then SDL_DestroyMutex(BufferLock);
+  BufferLock := nil;
+  inherited Close;
 end;
 
 procedure TBassVoiceStream.WriteData(Buffer: PByteArray; BufferSize: integer);
-var QueueSize: DWORD;
 begin
-  if ((Handle <> 0) and (BufferSize > 0)) then
-  begin
-    // query the queue size (normally 0)
-    QueueSize := BASS_StreamPutData(Handle, nil, 0);
-    // flush the buffer if the delay would be too high
-    if (QueueSize > MAX_VOICE_DELAY * FormatInfo.BytesPerSec) then
-      BASS_ChannelPlay(Handle, true);
-    // send new data to playback buffer
-    BASS_StreamPutData(Handle, Buffer, BufferSize);
-  end;
+  if BufferLock = nil then Exit;
+  SDL_LockMutex(BufferLock);
+  try if VoiceBuffer <> nil then VoiceBuffer.Write(Buffer, BufferSize);
+  finally SDL_UnlockMutex(BufferLock); end;
 end;
 
-// Note: we do not need the read-function for the BASS implementation
 function TBassVoiceStream.ReadData(Buffer: PByteArray; BufferSize: integer): integer;
 begin
-  Result := -1;
+  Result := 0;
+  if BufferLock = nil then Exit;
+  SDL_LockMutex(BufferLock);
+  try if VoiceBuffer <> nil then Result := VoiceBuffer.Read(Buffer, BufferSize);
+  finally SDL_UnlockMutex(BufferLock); end;
 end;
 
 function TBassVoiceStream.IsEOF(): boolean;

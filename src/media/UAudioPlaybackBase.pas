@@ -99,6 +99,7 @@ type
 
       // Interface for Visualizer
       function GetPCMData(var Data: TPCMData): Cardinal;
+      function GetMonitorLevel: Single;
 
       function CreateVoiceStream(Channel: integer; FormatInfo: TAudioFormatInfo): TAudioVoiceStream; virtual; abstract;
   end;
@@ -128,7 +129,7 @@ procedure ToggleVoiceRemoval();
 implementation
 
 uses
-  ULog;
+  ULog, Math;
 
 var doVoiceRemoval: boolean;
 
@@ -351,6 +352,21 @@ begin
     Result := MusicStream.GetPCMData(data)
   else
     Result := 0;
+end;
+
+function TAudioPlaybackBase.GetMonitorLevel: Single;
+var Data: TPCMData; Frames, I: Integer; Energy: Double;
+begin
+  Result := -1;
+  if not Assigned(MusicStream) then Exit;
+  Result := 0;
+  if MusicStream.Status <> ssPlaying then Exit;
+  Frames := Min(System.Length(Data), MusicStream.GetPCMData(Data));
+  if Frames <= 0 then Exit;
+  Energy := 0;
+  for I := 0 to Frames-1 do
+    Energy := Energy+Sqr(Data[I][0]/32768.0)+Sqr(Data[I][1]/32768.0);
+  Result := Sqrt(Energy/(Frames*2))*MusicStream.Volume;
 end;
 
 function TAudioPlaybackBase.OpenSound(const Filename: IPath): TAudioPlaybackStream;

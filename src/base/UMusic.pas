@@ -514,6 +514,7 @@ type
 
       // Interface for Visualizer
       function GetPCMData(var Data: TPCMData): Cardinal;
+      function GetMonitorLevel: Single;
 
       function CreateVoiceStream(ChannelMap: integer; FormatInfo: TAudioFormatInfo): TAudioVoiceStream;
   end;
@@ -554,6 +555,7 @@ type
 
       procedure RefreshDevices;
       procedure HandleDeviceEvent(DeviceID: Cardinal; Added: boolean);
+      procedure CheckCaptureHealth;
       procedure CaptureStart;
       procedure CaptureStop;
   end;

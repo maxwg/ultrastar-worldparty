@@ -1,11 +1,31 @@
 {
   "schema_version": 1,
-  "candidate": "Windows song search, stable pitch feedback, automatic microphone sensitivity and real-vocal benchmark",
-  "created_utc": "2026-10-17T18:19:53.448657+00:00",
+  "candidate": "Windows song search, stable pitch, bounded microphone monitoring and stalled-capture recovery",
+  "created_utc": "2026-10-17T18:44:04.033883+00:00",
   "base_checkpoint_commit": "2136ae4b03cf1fba0add94672b457a0116679584",
   "base_checkpoint_tree": "7a79756a1710f0443bb4e0bd4c100e290ad087c9",
-  "scope": "Clean i386-win32 release, existing search/download regressions, real vocal tracker benchmark, and actual SDL/OpenGL capture/scoring/render checks. Physical microphone/speaker hardware remains unverified.",
+  "scope": "Clean i386-win32 release; synthetic monitor gain/queue/converter tests; actual SDL/OpenGL search, download, scoring and sound-control checks. Physical microphone recovery and acoustic latency remain unmeasured.",
   "files": [
+    {
+      "path": "README-improvements.md",
+      "bytes": 3756,
+      "sha256": "32b7be6f52bacb9ee057a265b5d29362b2659d61245db782da389541869fad85"
+    },
+    {
+      "path": "README.md",
+      "bytes": 2777,
+      "sha256": "ffead80f0d2d6f0d147530d16d46eaf0970a052394f111dc5e0bf94e2c041776"
+    },
+    {
+      "path": "docs/microphone-recovery.md",
+      "bytes": 5880,
+      "sha256": "6bbd9359a3092393bb5f546ae7b0b98df24a814e6dddbae3ae746134179273be"
+    },
+    {
+      "path": "docs/pitch-display.md",
+      "bytes": 4037,
+      "sha256": "3fefa37141a984642dff2ffa4dcd9810caffb0e6f45b9dd8190abf07114c5786"
+    },
     {
       "path": "docs/song-catalog-backend.md",
       "bytes": 23126,
@@ -15,6 +35,11 @@
       "path": "docs/song-search-integration.md",
       "bytes": 18260,
       "sha256": "eef48063a69a1d38525f5dd4ea726ec577f113c04f6ce220edf7366fbd6e7adc"
+    },
+    {
+      "path": "docs/vocal-benchmark.md",
+      "bytes": 3423,
+      "sha256": "8a4390626a6a545d98726aafc2599e1da2254deda6a51183d57e456e8ca207ce"
     },
     {
       "path": "game/languages/English.ini",
@@ -42,9 +67,24 @@
       "sha256": "830e947081eaad39ff01ba5dc6272629964af76f3e75569319f48b860c967dee"
     },
     {
+      "path": "src/base/UDraw.pas",
+      "bytes": 85036,
+      "sha256": "5d5c5fb10b4a8d98022db2b6fdcff2f8a4065022127e3f36baac3dd1b91963cc"
+    },
+    {
       "path": "src/base/UGraphic.pas",
       "bytes": 23404,
       "sha256": "e0c20f55404aeccaa4a66480aaa6c93832b012b97df151bb2679b91cea52d8da"
+    },
+    {
+      "path": "src/base/UIni.pas",
+      "bytes": 61130,
+      "sha256": "95160575ae0fcaa4f38f579e27641e84414384f4ae1dab19492546c0c16b0c6f"
+    },
+    {
+      "path": "src/base/ULibraryCoverLoader.pas",
+      "bytes": 3581,
+      "sha256": "e2fda599a2b476b885e1c33ae10577c4d767011a8967cda2a6e1e3a0e32322cf"
     },
     {
       "path": "src/base/ULibraryGridLayout.pas",
@@ -52,9 +92,39 @@
       "sha256": "23bb9e25fefd82708748b49324031c7778628ef7c3edf33d91a5d928434561d1"
     },
     {
+      "path": "src/base/ULibrarySearchIndex.pas",
+      "bytes": 4218,
+      "sha256": "de894f4179b2eb5aa7e713c33252a4b8298f6d91d003715d9ca10a1dd2f6720b"
+    },
+    {
       "path": "src/base/UMain.pas",
-      "bytes": 20742,
-      "sha256": "c469cf343f60f4fae8b0750f28302d0b910d9783b9e67f833b4f082b79f1b0bc"
+      "bytes": 20887,
+      "sha256": "e456520d30f260fb291b056140a8d01d8cb8f07e8bb6b9114b9fc528669f09ef"
+    },
+    {
+      "path": "src/base/UMusic.pas",
+      "bytes": 39110,
+      "sha256": "3d00e8a5162329d5bd5cd1eb386c0a2e3a62eb2d84a3c942876c870f69dbf5b8"
+    },
+    {
+      "path": "src/base/UNote.pas",
+      "bytes": 20515,
+      "sha256": "e9a25c8c3c9d36175540e43e31df65193ba4e785ed7655dbf506ecf7e9a68b2f"
+    },
+    {
+      "path": "src/base/UPitchDisplay.pas",
+      "bytes": 7882,
+      "sha256": "2b6989173874d31f148df7be019a39eecca421ca8593bac627d2e63e8ca0fb3d"
+    },
+    {
+      "path": "src/base/URecord.pas",
+      "bytes": 28679,
+      "sha256": "31dbf6fdd64670d69c0571f07021a6926d39618ad7b9ea9405d21779dea07dda"
+    },
+    {
+      "path": "src/base/URingBuffer.pas",
+      "bytes": 4167,
+      "sha256": "2d4cd49b194c09788a6690a33364532c5a995242fe0848330161878bdf0d66c9"
     },
     {
       "path": "src/base/USongCatalogBridge.pas",
@@ -92,9 +162,39 @@
       "sha256": "c748a4fc2209f713a4ef5b44a24af1c341fd992e29b0ee90edb5d7eb4b4e95a5"
     },
     {
+      "path": "src/base/UVoiceMonitor.pas",
+      "bytes": 3142,
+      "sha256": "217ed2d6603d116eaa6247902db256fb37b118cd59fc0a9379a8dca25958b40c"
+    },
+    {
+      "path": "src/media/UAudioInput_Bass.pas",
+      "bytes": 20956,
+      "sha256": "36d99eae5dccf5862a1d021c5178564a0b63abc672e7961e86f91a906b5fdc4f"
+    },
+    {
+      "path": "src/media/UAudioInput_SDL.pas",
+      "bytes": 8897,
+      "sha256": "066eb30418706e51c72cedb3f11348a2fa425e3be40c0339ebe118c2749e98e4"
+    },
+    {
+      "path": "src/media/UAudioPlaybackBase.pas",
+      "bytes": 12383,
+      "sha256": "cd3ae068c08f4c34d84dbfefe82052ab224dc51b363769b87104ee664937596a"
+    },
+    {
       "path": "src/media/UAudioPlayback_Bass.pas",
-      "bytes": 25173,
-      "sha256": "7d2d3e6147d6d1cd4e662d9c53c20621c040ad9825d4fe636289be17fb91e204"
+      "bytes": 26040,
+      "sha256": "86e533182266c47bbf6955b55e7f2bde971114135d5847d6a6f149b4e6b60e87"
+    },
+    {
+      "path": "src/media/UAudioPlayback_SDL.pas",
+      "bytes": 5122,
+      "sha256": "3af10dc737b751e9b218b5e1321a14db3e1a29c5f47578fde1e4fc68880e8fb6"
+    },
+    {
+      "path": "src/media/UAudioPlayback_SoftMixer.pas",
+      "bytes": 32879,
+      "sha256": "1936866ca5765777ea77b91eedc49c04dc953ade7e624eff104cfe79b6d1d22b"
     },
     {
       "path": "src/menu/UMenu.pas",
@@ -112,9 +212,19 @@
       "sha256": "e090d65afc8707f53e0a53a8d48424659968747166601e7b28b7b5252ba608ec"
     },
     {
+      "path": "src/screens/UScreenOptionsAdvanced.pas",
+      "bytes": 4375,
+      "sha256": "8355a5ac040929b3781683e924469fd428b507dd159719d31f4d6bd6c2172888"
+    },
+    {
       "path": "src/screens/UScreenOptionsMicrophones.pas",
       "bytes": 25589,
       "sha256": "3adc14128e685999051ed126d1658daf53958bc105d5ba147d7f6f46c0d1f34b"
+    },
+    {
+      "path": "src/screens/UScreenOptionsSound.pas",
+      "bytes": 6018,
+      "sha256": "ea47aa7b05402c017471c9c0cc9bd21538f73113d9715cd8107dd1c3c0193190"
     },
     {
       "path": "src/screens/UScreenSong.pas",
@@ -130,6 +240,11 @@
       "path": "src/screens/UScreenSongMenu.pas",
       "bytes": 30284,
       "sha256": "3c55b9123810811ce969854b18d9ae225289f48e31a1f79d22da5d46974ae39b"
+    },
+    {
+      "path": "tests/catalog/current-candidate-manifest.json",
+      "bytes": 2151,
+      "sha256": "8c18c8f6457fdacdabcc9b93717c2b87fadb6f567d9c86ad418cf2c3cedf7a87"
     },
     {
       "path": "tests/catalog/test_job_cleanup.py",
@@ -187,14 +302,19 @@
       "sha256": "1005a0de7ec6f40ef6fc45643c998eb7fd751be0ac656042b7a2ae117db4039e"
     },
     {
+      "path": "tests/fixtures/vocal-benchmark-results.json",
+      "bytes": 308869,
+      "sha256": "5cacc531234d1a4fde430a1622174ad51e724a405ce51b421e26a49f7d10a081"
+    },
+    {
       "path": "tests/library_e2e/README.md",
       "bytes": 3959,
       "sha256": "25ef45ccf2351a4b6162a14949cedf467d5694d88e19ccb6c767a28ef9ac981d"
     },
     {
       "path": "tests/library_e2e/ULibraryE2E.pas",
-      "bytes": 19906,
-      "sha256": "22103abe7ccedd81df217d6e562073fa22f04ebfed51b66b5f6242bb7a3a0766"
+      "bytes": 22338,
+      "sha256": "34f4884042dce6453aeeb286ff0e360b73527cb211f2b60b816381aba22f9a92"
     },
     {
       "path": "tests/library_e2e/fixture_adapter.py",
@@ -203,8 +323,8 @@
     },
     {
       "path": "tests/library_e2e/prepare.py",
-      "bytes": 4851,
-      "sha256": "ada633432d6a2db8832613ede362ce16740c69b3343430fe21a36c65a296fb07"
+      "bytes": 4943,
+      "sha256": "a5ad38cbd4e849b31373e83889306e8dfc57a424a7a18c3229486ba5e86b85fd"
     },
     {
       "path": "tests/library_e2e/run.ps1",
@@ -222,6 +342,41 @@
       "sha256": "8b5c50d78aa5e226507e00c463f51cbe49e66ab7f1e2489172bd1c93b3db73e3"
     },
     {
+      "path": "tests/library_search_index_test.pas",
+      "bytes": 3388,
+      "sha256": "bfcc7ed509dfc8fa251a461ba43ea8feee530f84373261d0592ee4badbcff29f"
+    },
+    {
+      "path": "tests/pitch_benchmark.pas",
+      "bytes": 3746,
+      "sha256": "455f65679c392030be10a6a242d02db4987cff77d320fd816e76f4be9222bf7d"
+    },
+    {
+      "path": "tests/pitch_display_test.pas",
+      "bytes": 2888,
+      "sha256": "73e4173f40cc8c19d5cb38edadb977c29a1127d82229dab544b2c9e46c9a4d3f"
+    },
+    {
+      "path": "tests/pitch_tracker_test.pas",
+      "bytes": 9375,
+      "sha256": "f65a8788ee340fb86c02c9a0c06d41927b0d924dad58f073a534b1e5c1469993"
+    },
+    {
+      "path": "tests/record_capture_state_test.pas",
+      "bytes": 13186,
+      "sha256": "b16ae6fe9793e55af6786c6ff5a01cff1eb6fb0d1c5d7cdb0155e57e243ab216"
+    },
+    {
+      "path": "tests/run_monitor_tests.ps1",
+      "bytes": 1292,
+      "sha256": "6fb65b739449b290c2f4c27e504a19d0dac2169d59f0cced6aad0bf29e9d3db4"
+    },
+    {
+      "path": "tests/run_pitch_tests.ps1",
+      "bytes": 2847,
+      "sha256": "347dd939509c480fd6d50fcb7c7817ee41b65eea4b2320aeb2a4f5ed24e78caa"
+    },
+    {
       "path": "tests/song_identity_test.pas",
       "bytes": 796,
       "sha256": "3efd6f8e895e9c4f39f3ae782dde0a28c789c6f73bb6f71e45e4174b12e91a3e"
@@ -230,6 +385,21 @@
       "path": "tests/text_input_events_test.pas",
       "bytes": 703,
       "sha256": "7a3f80cbaf62d70f2845c515fd02ed86643b3044f140feef93614cce7ee5aa0c"
+    },
+    {
+      "path": "tests/vocal_benchmark.py",
+      "bytes": 39599,
+      "sha256": "94b0835a809148ac82c681cfd9c7daf9b8436cf88f448329a44d0ef4c54708c6"
+    },
+    {
+      "path": "tests/voice_monitor_stream_test.pas",
+      "bytes": 7996,
+      "sha256": "e30163e292fbc4ae69309b44f871d6489d0c6bab2a1d1914dda01c7887f2fd3c"
+    },
+    {
+      "path": "tests/voice_monitor_test.pas",
+      "bytes": 7909,
+      "sha256": "169b513bef532c2d8e976e2a12df52bb98fbc0a1119e62cf87687c602aad3369"
     },
     {
       "path": "tools/build_windows.ps1",
@@ -245,111 +415,6 @@
       "path": "tools/song_catalog.py",
       "bytes": 34357,
       "sha256": "2cdee78754569a21909b9a47ce8c2c40c7828faee0d76bf11f8d86835726be32"
-    },
-    {
-      "path": "README.md",
-      "bytes": 2777,
-      "sha256": "ffead80f0d2d6f0d147530d16d46eaf0970a052394f111dc5e0bf94e2c041776"
-    },
-    {
-      "path": "README-improvements.md",
-      "bytes": 3299,
-      "sha256": "28d49077ae65f20900a0a480f1b19a685bde2f715481fee4351fe05913593263"
-    },
-    {
-      "path": "src/base/ULibrarySearchIndex.pas",
-      "bytes": 4218,
-      "sha256": "de894f4179b2eb5aa7e713c33252a4b8298f6d91d003715d9ca10a1dd2f6720b"
-    },
-    {
-      "path": "src/base/ULibraryCoverLoader.pas",
-      "bytes": 3581,
-      "sha256": "e2fda599a2b476b885e1c33ae10577c4d767011a8967cda2a6e1e3a0e32322cf"
-    },
-    {
-      "path": "tests/library_search_index_test.pas",
-      "bytes": 3388,
-      "sha256": "bfcc7ed509dfc8fa251a461ba43ea8feee530f84373261d0592ee4badbcff29f"
-    },
-    {
-      "path": "docs/pitch-display.md",
-      "bytes": 4037,
-      "sha256": "3fefa37141a984642dff2ffa4dcd9810caffb0e6f45b9dd8190abf07114c5786"
-    },
-    {
-      "path": "src/base/UDraw.pas",
-      "bytes": 85036,
-      "sha256": "5d5c5fb10b4a8d98022db2b6fdcff2f8a4065022127e3f36baac3dd1b91963cc"
-    },
-    {
-      "path": "src/base/UIni.pas",
-      "bytes": 60748,
-      "sha256": "76dda43e7663cb371329756dc6c00698afb357adfc03af5c8171abe96b40e208"
-    },
-    {
-      "path": "src/base/UNote.pas",
-      "bytes": 20515,
-      "sha256": "e9a25c8c3c9d36175540e43e31df65193ba4e785ed7655dbf506ecf7e9a68b2f"
-    },
-    {
-      "path": "src/base/UPitchDisplay.pas",
-      "bytes": 7882,
-      "sha256": "2b6989173874d31f148df7be019a39eecca421ca8593bac627d2e63e8ca0fb3d"
-    },
-    {
-      "path": "src/base/URecord.pas",
-      "bytes": 26603,
-      "sha256": "cc4c03aef4187a30e2dc610cbe65ba0670f5ac77fd735502d7e4fc338e3483ff"
-    },
-    {
-      "path": "src/screens/UScreenOptionsAdvanced.pas",
-      "bytes": 4375,
-      "sha256": "8355a5ac040929b3781683e924469fd428b507dd159719d31f4d6bd6c2172888"
-    },
-    {
-      "path": "tests/pitch_display_test.pas",
-      "bytes": 2888,
-      "sha256": "73e4173f40cc8c19d5cb38edadb977c29a1127d82229dab544b2c9e46c9a4d3f"
-    },
-    {
-      "path": "tests/record_capture_state_test.pas",
-      "bytes": 13186,
-      "sha256": "b16ae6fe9793e55af6786c6ff5a01cff1eb6fb0d1c5d7cdb0155e57e243ab216"
-    },
-    {
-      "path": "docs/vocal-benchmark.md",
-      "bytes": 3423,
-      "sha256": "8a4390626a6a545d98726aafc2599e1da2254deda6a51183d57e456e8ca207ce"
-    },
-    {
-      "path": "tests/pitch_benchmark.pas",
-      "bytes": 3746,
-      "sha256": "455f65679c392030be10a6a242d02db4987cff77d320fd816e76f4be9222bf7d"
-    },
-    {
-      "path": "tests/pitch_tracker_test.pas",
-      "bytes": 9375,
-      "sha256": "f65a8788ee340fb86c02c9a0c06d41927b0d924dad58f073a534b1e5c1469993"
-    },
-    {
-      "path": "tests/run_pitch_tests.ps1",
-      "bytes": 2847,
-      "sha256": "347dd939509c480fd6d50fcb7c7817ee41b65eea4b2320aeb2a4f5ed24e78caa"
-    },
-    {
-      "path": "tests/vocal_benchmark.py",
-      "bytes": 39599,
-      "sha256": "94b0835a809148ac82c681cfd9c7daf9b8436cf88f448329a44d0ef4c54708c6"
-    },
-    {
-      "path": "tests/fixtures/vocal-benchmark-results.json",
-      "bytes": 308869,
-      "sha256": "5cacc531234d1a4fde430a1622174ad51e724a405ce51b421e26a49f7d10a081"
-    },
-    {
-      "path": "tests/catalog/current-candidate-manifest.json",
-      "sha256": "8c18c8f6457fdacdabcc9b93717c2b87fadb6f567d9c86ad418cf2c3cedf7a87",
-      "bytes": 2151
     }
   ],
   "source_hash_normalization": "CRLF normalized to LF",
@@ -421,5 +486,21 @@
     "expected_skip": 1,
     "installed_tools": "yt-dlp, ffprobe and ffmpeg hidden launch smoke checks passed",
     "scope": "No live YouTube download or user foreground-window interaction measured."
+  },
+  "monitor_validation": {
+    "queue_render_assertions": 48090,
+    "production_stream_assertions": 28420,
+    "conversion": "Real soft mixer and SDL converter, mono44.1kHz to stereo48kHz: 440Hz input measured441.01Hz, within2Hz tolerance. Timed producer, underrun/resume and stereo duplication checked.",
+    "pitch_capture_regression": "64 estimator assertions, tracker tests, 44 production capture/lifecycle assertions passed. Detector/scoring algorithm unchanged in this pass.",
+    "game_e2e": "Real Windows SDL/OpenGL, monitoring On: normal synthetic singing9000; +4-semitone control0. Volume20% to30% persisted; background selector/Back binding checked; download/autoplay and library restart passed at800x600 and1280x720. Dummy playback.",
+    "evidence": [
+      "work/monitor-regressions.log",
+      "build/monitor-tests/voice_monitor_test-result.txt",
+      "build/monitor-tests/voice_monitor_stream_test-result.txt",
+      "work/library-e2e-899e0a20f5",
+      "work/library-e2e-322a8cecd9"
+    ],
+    "installed_release_sha256": "6dc7f3d1cd5de073487ca5140df928ffdfbf41b42b8bfea32c0f9a9a7e52c510",
+    "limitations": "Physical USB/Bluetooth dropout recovery and acoustic round-trip latency not measured; 40ms limit is the application PCM queue only. BASS recovery paths compiled/reviewed, not tested against injected hardware failures."
   }
 }

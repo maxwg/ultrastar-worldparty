@@ -41,6 +41,9 @@ uses
 
 type
   TScreenOptionsSound = class(TMenu)
+  private
+    BackgroundMusicInteraction: integer;
+    ExitInteraction: integer;
   public
     constructor Create; override;
     function ParseInput(PressedKey: Cardinal; CharCode: UCS4Char;
@@ -72,7 +75,7 @@ begin
       end;
       SDLK_RETURN:
       begin
-        if SelInteraction = 7 then
+        if SelInteraction = ExitInteraction then
         begin
           Ini.Save;
           AudioPlayback.PlaySound(SoundLib.Back);
@@ -85,7 +88,7 @@ begin
         InteractPrev;
       SDLK_RIGHT:
       begin
-        if (SelInteraction >= 0) and (SelInteraction < 8) then
+        if (SelInteraction >= 0) and (SelInteraction < ExitInteraction) then
         begin
           AudioPlayback.PlaySound(SoundLib.Option);
           InteractInc;
@@ -93,7 +96,7 @@ begin
       end;
       SDLK_LEFT:
       begin
-        if (SelInteraction >= 0) and (SelInteraction < 8) then
+        if (SelInteraction >= 0) and (SelInteraction < ExitInteraction) then
         begin
           AudioPlayback.PlaySound(SoundLib.Option);
           InteractDec;
@@ -102,16 +105,10 @@ begin
     end;
   end;
 
-{**
- * Actually this one isn't pretty - but it does the trick of
- * turning the background music on/off in "real time"
- * bgm = background music
- * TODO: - Fetching the SelectInteraction via something more descriptive
- *       - Obtaining the current value of a select is imho ugly
- *}
-  if (SelInteraction = 1) then
+{ Keep background music synchronized with its selector immediately. }
+  if (SelInteraction = BackgroundMusicInteraction) then
   begin
-    if TBackgroundMusicOption(SelectsS[1].SelectedOption) = bmoOn then
+    if TBackgroundMusicOption(SelectsS[BackgroundMusicInteraction].SelectedOption) = bmoOn then
       SoundLib.StartBgMusic
     else
       SoundLib.PauseBgMusic;
@@ -123,30 +120,70 @@ constructor TScreenOptionsSound.Create;
 var
   IMusicAutoGainTranslated: array[0..3] of UTF8String;
   IPreviewFadingTranslated: array[0..5] of UTF8String;
+  SlideStyle: TThemeSelectSlide;
+  ExitStyle: TThemeButton;
+  RowY, RowSpacing: integer;
   I: integer;
 begin
   inherited Create;
 
   LoadFromTheme(Theme.OptionsSound);
-  AddSelectSlide(Theme.OptionsSound.SelectSlideVoicePassthrough, UIni.Ini.VoicePassthrough, UIni.IVoicePassthrough, 'OPTION_VALUE_');
-  AddSelectSlide(Theme.OptionsSound.SelectBackgroundMusic, UIni.Ini.BackgroundMusicOption, UIni.IBackgroundMusic, 'OPTION_VALUE_');
-  AddSelectSlide(Theme.OptionsSound.SelectClickAssist, UIni.Ini.ClickAssist, UIni.IClickAssist, 'OPTION_VALUE_');
-  AddSelectSlide(Theme.OptionsSound.SelectBeatClick, UIni.Ini.BeatClick, UIni.IBeatClick, 'OPTION_VALUE_');
+  RowY := Theme.OptionsSound.SelectSlideVoicePassthrough.Y;
+  RowSpacing := Theme.OptionsSound.SelectSlideVoicePassthrough.H + 2;
+
+  SlideStyle := Theme.OptionsSound.SelectSlideVoicePassthrough;
+  SlideStyle.Y := RowY;
+  AddSelectSlide(SlideStyle, UIni.Ini.VoicePassthrough, UIni.IVoicePassthrough, 'OPTION_VALUE_');
+  Inc(RowY, RowSpacing);
+
+  SlideStyle := Theme.OptionsSound.SelectSlideVoicePassthrough;
+  SlideStyle.Y := RowY;
+  SlideStyle.Text := 'Mic monitor volume';
+  AddSelectSlide(SlideStyle, UIni.Ini.VoiceMonitorVolume, UIni.IVoiceMonitorVolume);
+  Inc(RowY, RowSpacing);
+
+  SlideStyle := Theme.OptionsSound.SelectBackgroundMusic;
+  SlideStyle.Y := RowY;
+  BackgroundMusicInteraction := AddSelectSlide(SlideStyle, UIni.Ini.BackgroundMusicOption, UIni.IBackgroundMusic, 'OPTION_VALUE_');
+  Inc(RowY, RowSpacing);
+
+  SlideStyle := Theme.OptionsSound.SelectClickAssist;
+  SlideStyle.Y := RowY;
+  AddSelectSlide(SlideStyle, UIni.Ini.ClickAssist, UIni.IClickAssist, 'OPTION_VALUE_');
+  Inc(RowY, RowSpacing);
+
+  SlideStyle := Theme.OptionsSound.SelectBeatClick;
+  SlideStyle.Y := RowY;
+  AddSelectSlide(SlideStyle, UIni.Ini.BeatClick, UIni.IBeatClick, 'OPTION_VALUE_');
+  Inc(RowY, RowSpacing);
   IMusicAutoGainTranslated := UIni.IMusicAutoGain;
   for I := 1 to High(UIni.IMusicAutoGain) do
     IMusicAutoGainTranslated[I] := 'GAIN_'+IMusicAutoGainTranslated[I];
 
-  AddSelectSlide(Theme.OptionsSound.SelectSlideMusicAutoGain, UIni.Ini.MusicAutoGain, IMusicAutoGainTranslated, 'OPTION_VALUE_');
-  AddSelectSlide(Theme.OptionsSound.SelectSlidePreviewVolume, UIni.Ini.PreviewVolume, UIni.IPreviewVolume);
+  SlideStyle := Theme.OptionsSound.SelectSlideMusicAutoGain;
+  SlideStyle.Y := RowY;
+  AddSelectSlide(SlideStyle, UIni.Ini.MusicAutoGain, IMusicAutoGainTranslated, 'OPTION_VALUE_');
+  Inc(RowY, RowSpacing);
+
+  SlideStyle := Theme.OptionsSound.SelectSlidePreviewVolume;
+  SlideStyle.Y := RowY;
+  AddSelectSlide(SlideStyle, UIni.Ini.PreviewVolume, UIni.IPreviewVolume);
+  Inc(RowY, RowSpacing);
   IPreviewFadingTranslated[0] := ULanguage.Language.Translate('OPTION_VALUE_OFF');
   IPreviewFadingTranslated[1] := '1 '+LowerCase(ULanguage.Language.Translate('OPTION_VALUE_SEC'));
   IPreviewFadingTranslated[2] := '2 '+LowerCase(ULanguage.Language.Translate('OPTION_VALUE_SECS'));
   IPreviewFadingTranslated[3] := '3 '+LowerCase(ULanguage.Language.Translate('OPTION_VALUE_SECS'));
   IPreviewFadingTranslated[4] := '4 '+LowerCase(ULanguage.Language.Translate('OPTION_VALUE_SECS'));
   IPreviewFadingTranslated[5] := '5 '+LowerCase(ULanguage.Language.Translate('OPTION_VALUE_SECS'));
-  AddSelectSlide(Theme.OptionsSound.SelectSlidePreviewFading, UIni.Ini.PreviewFading, IPreviewFadingTranslated);
+  SlideStyle := Theme.OptionsSound.SelectSlidePreviewFading;
+  SlideStyle.Y := RowY;
+  AddSelectSlide(SlideStyle, UIni.Ini.PreviewFading, IPreviewFadingTranslated);
+  Inc(RowY, RowSpacing);
 
-  AddButton(Theme.OptionsSound.ButtonExit);
+  ExitInteraction := Length(SelectsS);
+  ExitStyle := Theme.OptionsSound.ButtonExit;
+  ExitStyle.Y := RowY;
+  AddButton(ExitStyle);
 
   Interaction := 0;
 end;

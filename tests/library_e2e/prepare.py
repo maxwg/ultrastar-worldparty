@@ -28,7 +28,7 @@ chart = '#TITLE:Remote Fixture\n#ARTIST:E2E\n#MP3:media.mp4\n#VIDEO:media.mp4\n#
 if args.rap:
     chart = chart.replace(': 0 8 9 la', 'R 0 8 9 la').replace(': 10 8 11 la', 'R 10 8 11 la')
 (runtime / 'fixture.txt').write_text(chart, encoding='utf-8')
-settings = configparser.ConfigParser()
+settings = configparser.ConfigParser(interpolation=None)
 settings.optionxform = str
 settings['Game'] = dict(Players='1', Language='English', Tabs='Off', Sorting='Artist', SongMenu='Chessboard')
 settings['Graphics'] = dict(FullScreen='Off', Resolution='800x600', Screens='1', Split='Off', MaxFramerate='60')
@@ -37,6 +37,7 @@ if args.wide_window:
     settings['Graphics']['Resolution'] = '1280x720'
 settings['Catalog'] = dict(Python=sys.executable, Adapter=str(runtime/'fixture_adapter.py'), Credentials=str(runtime/'fixture-credentials.json'))
 settings['Directories'] = dict(SongDir1=str(runtime/'songs'))
+settings['Sound'] = dict(VoicePassthrough='On', VoiceMonitorVolume='20%')
 settings['Record'] = {'DeviceName[1]':'System audio capture device','Input[1]':'0','Channel1[1]':'1','Channel2[1]':'0','Latency[1]':'0'}
 with (runtime/'config.ini').open('w', encoding='utf-8') as handle:
     settings.write(handle)

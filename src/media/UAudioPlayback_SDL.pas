@@ -102,9 +102,9 @@ begin
   SampleBufferSize := IAudioOutputBufferSizeVals[Ini.AudioOutputBufferSizeIndex];
   if (SampleBufferSize <= 0) then
   begin
-    // Automatic setting default
-    // FIXME: too much glitches with 1024 samples
-    SampleBufferSize := 2048; //1024;
+    // Keep live monitoring responsive; retain the song-only automatic default.
+    if Ini.VoicePassthrough = 1 then SampleBufferSize := 512
+    else SampleBufferSize := 2048;
   end;
 
   FillChar(DesiredAudioSpec, SizeOf(DesiredAudioSpec), 0);
