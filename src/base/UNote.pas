@@ -157,7 +157,8 @@ uses
   UPlaylist,
   USkins,
   USongs,
-  UThemes;
+  UThemes,
+  UPitchDisplay;
 
 function GetTimeForBeats(BPM, Beats: real): real;
 begin
@@ -194,6 +195,9 @@ var
   CP:      integer;
   PetGr:   integer;
 begin
+  { Update the shared detector at most every 20ms, not only at score beats. }
+  for Count := 0 to PlayersPlay-1 do
+    AudioInputProcessor.Sound[Count].AnalyzeBuffer;
   LyricsState.UpdateBeats();
 
   PetGr := 0;
@@ -369,6 +373,7 @@ var
   ActualBeat:          integer;
   ActualTone:          integer;
   NoteAvailable:       boolean;
+  RapAvailable:        boolean;
   NewNote:             boolean;
   Range:               integer;
   NoteHit:             boolean;
@@ -398,6 +403,7 @@ begin
       begin
         // check for an active note at the current time defined in the lyrics
         NoteAvailable := false;
+        RapAvailable := false;
         SentenceDetected := SentenceMin;
         for SentenceIndex := SentenceMin to SentenceMax do
         begin
@@ -413,6 +419,7 @@ begin
             begin
               SentenceDetected := SentenceIndex;
               NoteAvailable := true;
+              RapAvailable := CurrentLineFragment.NoteType in [ntRap, ntRapGolden];
               Break;
             end;
           end;
@@ -440,7 +447,9 @@ begin
         //LyricsState.Tone := LyricsState.Tone + Round(Random(3)) - 1;
 
         // add note if possible
-        if (CurrentSound.ToneValid and NoteAvailable) then
+        if (NoteAvailable and
+            (CurrentSound.ToneValid or CurrentSound.ScorePitch.Valid or
+             (CurrentSound.VoiceActive and RapAvailable))) then
         begin
           CurrentNoteType := ntNormal;
           Line := @CurrentSong.Lines[CP].Line[SentenceDetected];
@@ -455,23 +464,24 @@ begin
               CurrentNoteType := CurrentLineFragment.NoteType;
               // compare notes (from song-file and from player)
 
-              // move players tone to proper octave
-              while (CurrentSound.Tone - CurrentLineFragment.Tone > 6) do
-                CurrentSound.Tone := CurrentSound.Tone - 12;
-
-              while (CurrentSound.Tone - CurrentLineFragment.Tone < -6) do
-                CurrentSound.Tone := CurrentSound.Tone + 12;
-
-              // half size notes patch
-              NoteHit := false;
-              ActualTone := CurrentSound.Tone;
+              ActualTone := Round(FoldPitchToTarget(CurrentSound.ScorePitch.Midi,
+                CurrentLineFragment.Tone+60))-60;
               if (ScreenSong.Mode = smNormal) then
-                Range := 2 - Ini.PlayerLevel[PlayerIndex]
+                Range := Ini.PlayerLevel[PlayerIndex]
               else
-                Range := 2 - Ini.Difficulty;
-
-              // check if the player hit the correct tone within the tolerated range
-              if (Abs(CurrentLineFragment.Tone - CurrentSound.Tone) <= Range) or (CurrentLineFragment.NoteType = ntRap) or (CurrentLineFragment.NoteType = ntRapGolden) then
+                Range := Ini.Difficulty;
+              NoteHit := False;
+              { Pitch policy is shared with the real-vocal benchmark. A brief
+                unvoiced dropout only counts inside the same already-hit note. }
+              if ((CurrentLineFragment.NoteType in [ntRap, ntRapGolden]) and
+                  CurrentSound.VoiceActive) or
+                 (CurrentSound.ScorePitch.Valid and
+                  PitchMatchesNote(CurrentSound.ScorePitch.Midi,
+                   CurrentLineFragment.Tone+60, Range) and
+                  (CurrentSound.ToneValid or
+                   ((LastPlayerNote <> nil) and LastPlayerNote.Hit and
+                    (LastPlayerNote.Start >= CurrentLineFragment.Start) and
+                    (LastPlayerNote.Start+LastPlayerNote.Length = ActualBeat)))) then
               begin
                 // adjust the players tone to the correct one
                 // TODO: do we need to do this?
@@ -529,7 +539,9 @@ begin
           end; // for
 
           // check if we have to add a new note or extend the note's length
-          if (SentenceDetected = SentenceMax) then
+          if (SentenceDetected = SentenceMax) and
+             (CurrentSound.ToneValid or CurrentSound.ScorePitch.Valid or
+              (CurrentSound.VoiceActive and (CurrentNoteType in [ntRap, ntRapGolden]))) then
           begin
             // we will add a new note
             NewNote := true;

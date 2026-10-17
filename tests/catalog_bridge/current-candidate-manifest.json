@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "candidate": "Windows collection grid, USDB search/download controls and artist/title deduplication",
-  "created_utc": "2026-10-17T17:50:45.164226+00:00",
+  "candidate": "Windows song search, stable pitch feedback, automatic microphone sensitivity and real-vocal benchmark",
+  "created_utc": "2026-10-17T18:19:53.448657+00:00",
   "base_checkpoint_commit": "2136ae4b03cf1fba0add94672b457a0116679584",
   "base_checkpoint_tree": "7a79756a1710f0443bb4e0bd4c100e290ad087c9",
-  "scope": "Clean i386-win32 release, offline regressions, prior live USDB authentication/search/media installation, and real SDL/OpenGL fixture end-to-end validation. Physical microphone/speaker hardware remains unverified.",
+  "scope": "Clean i386-win32 release, existing search/download regressions, real vocal tracker benchmark, and actual SDL/OpenGL capture/scoring/render checks. Physical microphone/speaker hardware remains unverified.",
   "files": [
     {
       "path": "docs/song-catalog-backend.md",
@@ -188,13 +188,13 @@
     },
     {
       "path": "tests/library_e2e/README.md",
-      "bytes": 3201,
-      "sha256": "008fd8a829052c3387a6c3d62cf15dd50d467f7539b6da69ed9ebf3ce18e21ce"
+      "bytes": 3959,
+      "sha256": "25ef45ccf2351a4b6162a14949cedf467d5694d88e19ccb6c767a28ef9ac981d"
     },
     {
       "path": "tests/library_e2e/ULibraryE2E.pas",
-      "bytes": 9745,
-      "sha256": "68da7075f22071dd89aa44c91b55236d11a6af5c59899bdec72b640c09485db3"
+      "bytes": 19906,
+      "sha256": "22103abe7ccedd81df217d6e562073fa22f04ebfed51b66b5f6242bb7a3a0766"
     },
     {
       "path": "tests/library_e2e/fixture_adapter.py",
@@ -203,18 +203,18 @@
     },
     {
       "path": "tests/library_e2e/prepare.py",
-      "bytes": 4695,
-      "sha256": "cbb9fba32089e7208c612dab894a1c78dd1e3bac1df1d26cf300b37371f327a9"
+      "bytes": 4851,
+      "sha256": "ada633432d6a2db8832613ede362ce16740c69b3343430fe21a36c65a296fb07"
     },
     {
       "path": "tests/library_e2e/run.ps1",
-      "bytes": 2963,
-      "sha256": "862020c9e53aa93bfc7bceac3b08ce0a5e7408f41d2f48bbd5f9da91a8e706ec"
+      "bytes": 3184,
+      "sha256": "91aabba7d34c9da9c5b4458b9b2f48c9bae0a28f50749cc04b9ac20cb89cd593"
     },
     {
       "path": "tests/library_e2e/run.py",
-      "bytes": 2540,
-      "sha256": "a66b3eb7b6f3bb1451fcfd36278f30e294223960aca9cb88e14370f0031242d5"
+      "bytes": 2691,
+      "sha256": "561bae0ca4dc21c529dac039ff715d4e4f008e15e6fe32013cd8e1829ff6b90d"
     },
     {
       "path": "tests/library_grid_test.pas",
@@ -248,13 +248,13 @@
     },
     {
       "path": "README.md",
-      "bytes": 2267,
-      "sha256": "a0337bd16a1c35d512805ab7b25d53d6b8dab43a89f290826da89d1d5993eeff"
+      "bytes": 2777,
+      "sha256": "ffead80f0d2d6f0d147530d16d46eaf0970a052394f111dc5e0bf94e2c041776"
     },
     {
       "path": "README-improvements.md",
-      "bytes": 2916,
-      "sha256": "93e1927f9a017e26aa4ade16bf14f806b111ec8a51b3ca3d61629ccc73c7a999"
+      "bytes": 3217,
+      "sha256": "766d94b1aebdab054cb511b0c6ae99130bf265a96ae5256ade9357322d3ebebb"
     },
     {
       "path": "src/base/ULibrarySearchIndex.pas",
@@ -270,6 +270,81 @@
       "path": "tests/library_search_index_test.pas",
       "bytes": 3388,
       "sha256": "bfcc7ed509dfc8fa251a461ba43ea8feee530f84373261d0592ee4badbcff29f"
+    },
+    {
+      "path": "docs/pitch-display.md",
+      "bytes": 4037,
+      "sha256": "3fefa37141a984642dff2ffa4dcd9810caffb0e6f45b9dd8190abf07114c5786"
+    },
+    {
+      "path": "src/base/UDraw.pas",
+      "bytes": 85036,
+      "sha256": "5d5c5fb10b4a8d98022db2b6fdcff2f8a4065022127e3f36baac3dd1b91963cc"
+    },
+    {
+      "path": "src/base/UIni.pas",
+      "bytes": 60748,
+      "sha256": "76dda43e7663cb371329756dc6c00698afb357adfc03af5c8171abe96b40e208"
+    },
+    {
+      "path": "src/base/UNote.pas",
+      "bytes": 20515,
+      "sha256": "e9a25c8c3c9d36175540e43e31df65193ba4e785ed7655dbf506ecf7e9a68b2f"
+    },
+    {
+      "path": "src/base/UPitchDisplay.pas",
+      "bytes": 7882,
+      "sha256": "2b6989173874d31f148df7be019a39eecca421ca8593bac627d2e63e8ca0fb3d"
+    },
+    {
+      "path": "src/base/URecord.pas",
+      "bytes": 26603,
+      "sha256": "cc4c03aef4187a30e2dc610cbe65ba0670f5ac77fd735502d7e4fc338e3483ff"
+    },
+    {
+      "path": "src/screens/UScreenOptionsAdvanced.pas",
+      "bytes": 4375,
+      "sha256": "8355a5ac040929b3781683e924469fd428b507dd159719d31f4d6bd6c2172888"
+    },
+    {
+      "path": "tests/pitch_display_test.pas",
+      "bytes": 2888,
+      "sha256": "73e4173f40cc8c19d5cb38edadb977c29a1127d82229dab544b2c9e46c9a4d3f"
+    },
+    {
+      "path": "tests/record_capture_state_test.pas",
+      "bytes": 13186,
+      "sha256": "b16ae6fe9793e55af6786c6ff5a01cff1eb6fb0d1c5d7cdb0155e57e243ab216"
+    },
+    {
+      "path": "docs/vocal-benchmark.md",
+      "bytes": 3423,
+      "sha256": "8a4390626a6a545d98726aafc2599e1da2254deda6a51183d57e456e8ca207ce"
+    },
+    {
+      "path": "tests/pitch_benchmark.pas",
+      "bytes": 3746,
+      "sha256": "455f65679c392030be10a6a242d02db4987cff77d320fd816e76f4be9222bf7d"
+    },
+    {
+      "path": "tests/pitch_tracker_test.pas",
+      "bytes": 9375,
+      "sha256": "f65a8788ee340fb86c02c9a0c06d41927b0d924dad58f073a534b1e5c1469993"
+    },
+    {
+      "path": "tests/run_pitch_tests.ps1",
+      "bytes": 2847,
+      "sha256": "347dd939509c480fd6d50fcb7c7817ee41b65eea4b2320aeb2a4f5ed24e78caa"
+    },
+    {
+      "path": "tests/vocal_benchmark.py",
+      "bytes": 39599,
+      "sha256": "94b0835a809148ac82c681cfd9c7daf9b8436cf88f448329a44d0ef4c54708c6"
+    },
+    {
+      "path": "tests/fixtures/vocal-benchmark-results.json",
+      "bytes": 308869,
+      "sha256": "5cacc531234d1a4fde430a1622174ad51e724a405ce51b421e26a49f7d10a081"
     }
   ],
   "source_hash_normalization": "CRLF normalized to LF",
@@ -325,5 +400,13 @@
     "visual_ui": "PASS: actual Windows OpenGL grid and singing frames inspected",
     "automatic_playback": "PASS: installed fixture selected, singing scene entered, audio callback clock advances; physical sound hardware not tested",
     "cached_search": "PASS: current live stored login and repeat cached Adele query, seven unique matches"
+  },
+  "pitch_validation": {
+    "synthetic": "64 estimator assertions plus tracker smoothing/grace/sensitivity regressions",
+    "capture": "44 production capture-state/lifecycle assertions on Windows",
+    "vocal_benchmark": "40 actual solo-vocal recordings, fixed development1-10 / heldout11-40; human A1/A2 references; tests/fixtures/vocal-benchmark-results.json",
+    "game_e2e": "Normal synthetic singing 9000/9000 note points; +4-semitone and digital silence each0; unpitched rap9000. Actual SDL/OpenGL, dummy playback output.",
+    "release_sha256": "c5b7ad44ad4d03639e6bfb2822a5323280b2c65091dcf32f65f2c462c0d36d57",
+    "limitations": "Recorded benchmark excludes line bonuses/beat clock; normal capture44.1kHz; no physical microphone, room, accompaniment bleed or hardware-latency validation."
   }
 }

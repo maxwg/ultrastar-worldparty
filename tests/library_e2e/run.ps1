@@ -5,7 +5,8 @@ param(
   [string]$FfmpegPath = (Get-Command ffmpeg -ErrorAction Stop).Source,
   [switch]$NoFade,
   [switch]$CancelDownload,
-  [switch]$WideWindow
+  [switch]$WideWindow,
+  [ValidateSet('normal','wrong','silence','rap')][string]$PitchControl = 'normal'
 )
 $ErrorActionPreference='Stop'
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
@@ -19,6 +20,7 @@ foreach($name in @('avatars','covers','fonts','languages','licenses','plugins','
 $prepareArguments=@((Join-Path $PSScriptRoot 'prepare.py'),'--repo',$repo,'--runtime',$runtime,'--ffmpeg',$FfmpegPath)
 if($NoFade){$prepareArguments+='--no-fade'}
 if($WideWindow){$prepareArguments+='--wide-window'}
+if($PitchControl -eq 'rap'){$prepareArguments+='--rap'}
 & $PythonPath @prepareArguments
 if($LASTEXITCODE -ne 0){throw 'Fixture preparation failed'}
 $compiler = Join-Path $CompilerRoot 'installed\bin\i386-win32\fpc.exe'
@@ -45,6 +47,7 @@ foreach($test in @('library_search_index_test','text_input_events_test')) {
 }
 $runArguments=@((Join-Path $PSScriptRoot 'run.py'),'--runtime',$runtime)
 if($CancelDownload){$runArguments+='--cancel-download'}
+if($PitchControl -ne 'normal'){$runArguments+=@('--pitch-control',$PitchControl)}
 & $PythonPath @runArguments
 if($LASTEXITCODE -ne 0){throw 'End-to-end game verification failed'}
 Write-Output ('Evidence: '+$root)

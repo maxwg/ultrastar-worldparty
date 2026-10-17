@@ -319,8 +319,8 @@ const
   IBeatClick:        array[0..1] of UTF8String  = ('Off', 'On');
   ISavePlayback:     array[0..1] of UTF8String  = ('Off', 'On');
 
-  IThreshold:        array[0..3] of UTF8String  = ('5%', '10%', '15%', '20%');
-  IThresholdVals:    array[0..3] of single  = (0.05, 0.10,  0.15,  0.20);
+  IThreshold:        array[0..4] of UTF8String  = ('5%', '10%', '15%', '20%', 'Auto');
+  IThresholdVals:    array[0..4] of single  = (0.05, 0.10, 0.15, 0.20, 0.0012);
 
   IVoicePassthrough: array[0..1] of UTF8String  = ('Off', 'On');
 
@@ -670,7 +670,7 @@ begin
   // MicBoost
   MicBoost := ReadArrayIndex(IMicBoost, IniFile, 'Record', 'MicBoost', IGNORE_INDEX, 'Off');
   // Threshold
-  ThresholdIndex := ReadArrayIndex(IThreshold, IniFile, 'Record', 'Threshold', 1);
+  ThresholdIndex := ReadArrayIndex(IThreshold, IniFile, 'Record', 'Threshold', 4);
 end;
 
 procedure TIni.SaveInputDeviceCfg(IniFile: TIniFile);

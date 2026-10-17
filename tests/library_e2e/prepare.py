@@ -15,6 +15,7 @@ parser.add_argument('--runtime', type=Path, required=True)
 parser.add_argument('--ffmpeg', required=True)
 parser.add_argument('--no-fade', action='store_true')
 parser.add_argument('--wide-window', action='store_true')
+parser.add_argument('--rap', action='store_true')
 args = parser.parse_args()
 runtime = args.runtime.resolve()
 for dll in (args.repo / 'game').glob('*.dll'):
@@ -23,7 +24,9 @@ for directory in ('songs/LocalFixture', 'songs/LocalFixtureDuplicate', 'screensh
     (runtime / directory).mkdir(parents=True, exist_ok=True)
 shutil.copy2(Path(__file__).with_name('fixture_adapter.py'), runtime / 'fixture_adapter.py')
 (runtime / 'fixture-credentials.json').write_text(json.dumps({'user':'offline-fixture','pass':'offline-fixture'}))
-chart = '#TITLE:Remote Fixture\n#ARTIST:E2E\n#MP3:media.mp4\n#VIDEO:media.mp4\n#BPM:120\n#GAP:0\n#ENCODING:UTF8\n: 0 8 60 la\n- 8\n: 10 8 62 la\nE\n'
+chart = '#TITLE:Remote Fixture\n#ARTIST:E2E\n#MP3:media.mp4\n#VIDEO:media.mp4\n#BPM:120\n#GAP:0\n#ENCODING:UTF8\n: 0 8 9 la\n- 8\n: 10 8 11 la\nE\n'
+if args.rap:
+    chart = chart.replace(': 0 8 9 la', 'R 0 8 9 la').replace(': 10 8 11 la', 'R 10 8 11 la')
 (runtime / 'fixture.txt').write_text(chart, encoding='utf-8')
 settings = configparser.ConfigParser()
 settings.optionxform = str

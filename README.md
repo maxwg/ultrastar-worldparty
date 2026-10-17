@@ -20,6 +20,15 @@ UltraStar's regular cover-button renderer, theme background and mouse scaling.
 
 See [improvements and local paths](README-improvements.md).
 
+## Singing feedback
+
+A stable thin pitch line replaces the thick sung bars by default (**F7** toggles).
+It follows the same pitch detector and octave convention as scoring. Automatic
+microphone sensitivity handles quiet inputs; brief dropped notes get up to
+60 ms of grace within an already-hit note. Easy remains the forgiving default.
+See [pitch controls](docs/pitch-display.md) and the
+[recorded-vocal benchmark](docs/vocal-benchmark.md).
+
 ## Build and verify
 
 Use the existing Windows Free Pascal toolchain:
@@ -27,6 +36,7 @@ Use the existing Windows Free Pascal toolchain:
 ```powershell
 tools\build_windows.ps1 -CompilerRoot <local-fpc-toolchain-root>
 tests\library_e2e\run.ps1 -CompilerRoot <local-fpc-toolchain-root>
+tests\run_pitch_tests.ps1 -CompilerRoot <local-fpc-toolchain-root>
 ```
 
 The Windows E2E harness runs the real SDL/OpenGL app with isolated fixtures:

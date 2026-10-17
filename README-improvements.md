@@ -24,7 +24,11 @@
 - Five-minute in-memory search/details caches, limited to 64 entries each.
 - Artist + title deduplication hides repeated charts without deleting files.
 - Microphone setup replaces the old Listen tile; reload rebinds device settings.
-- Existing artist navigation and live pitch feedback remain available.
+- Stable thin pitch line by default; F7 restores thick bars, F8 shows true Hz/note.
+- One continuous detector for scoring and display, updated on fresh PCM every 20 ms.
+- Automatic mic sensitivity and short, same-note dropout grace; Easy stays forgiving.
+- Real-vocal benchmark and production capture/scoring/render checks.
+- Existing artist navigation remains available.
 
 ## Local installation and USDB paths
 

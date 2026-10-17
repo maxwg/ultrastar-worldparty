@@ -129,7 +129,7 @@ begin
   Slide := Theme.OptionsAdvanced.SelectOscilloscope;
   Slide.Text := 'Target note names (F6)';
   AddRow(Slide, Ini.NoteNames, IOscilloscope);
-  Slide.Text := 'Detected pitch (F7)';
+  Slide.Text := 'Stable pitch line (F7)';
   AddRow(Slide, Ini.DetectedPitch, IOscilloscope);
   Slide.Text := 'Current pitch readout (F8)';
   AddRow(Slide, Ini.PitchReadout, IOscilloscope);

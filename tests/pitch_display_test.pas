@@ -49,5 +49,10 @@ begin
   for I:=4096 to High(LongSamples) do LongSamples[I]:=Round(10000*Sin(2*Pi*220*I/48000));
   P:=EstimatePitch(LongSamples,48000);
   Check(P.Valid and (Abs(P.Hz-220)<1),'long input uses latest bounded window');
+  for I:=0 to 3071 do Samples[I]:=Round(12000*Sin(2*Pi*50.5*I/44100));
+  for I:=3072 to High(Samples) do Samples[I]:=0;
+  P:=EstimatePitch(Samples,44100);
+  Check(P.RecentVolume<0.00001,'new silence rejects older window DC offset');
+  Check(not P.Valid,'a quiet latest frame cannot keep scoring a previous low note');
   WriteLn(Count,' assertions passed');
 end.

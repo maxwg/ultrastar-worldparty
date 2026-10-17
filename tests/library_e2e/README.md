@@ -8,6 +8,9 @@ tests\library_e2e\run.ps1 -CompilerRoot <existing-local-toolchain-root>
 tests\library_e2e\run.ps1 -CompilerRoot <existing-local-toolchain-root> -NoFade
 tests\library_e2e\run.ps1 -CompilerRoot <existing-local-toolchain-root> -NoFade -CancelDownload
 tests\library_e2e\run.ps1 -CompilerRoot <existing-local-toolchain-root> -WideWindow
+tests\library_e2e\run.ps1 -CompilerRoot <existing-local-toolchain-root> -PitchControl wrong
+tests\library_e2e\run.ps1 -CompilerRoot <existing-local-toolchain-root> -PitchControl silence
+tests\library_e2e\run.ps1 -CompilerRoot <existing-local-toolchain-root> -PitchControl rap
 ```
 
 The runner creates a fresh ignored `work/library-e2e-*` runtime. It builds a
@@ -32,6 +35,12 @@ local/remote ordering, wrapping to the last page, repeated Enter containment,
 source fallback, publication, rescan, selecting the correct installed song,
 singing-screen entry without an error popup, and advancing playback position.
 Another application launch verifies the download is still in the scanned library.
+During singing, a fake microphone sends chart-aligned PCM through production
+capture, detection, scoring and rendering. Correct A4/B4 singing must score at
+least 7,500 of the available 9,000 note points. Wrong-pitch and silence controls
+must score zero (at most 100 for the wrong-pitch timing allowance). Unpitched rap
+uses activity scoring and must also earn at least 7,500. Two singing screenshots
+show the stable thin line. This verifies injected audio, not microphone hardware.
 The cancellation variant holds a real helper download active until Escape kills
 the owned process and restores signed-in search, without publishing a song.
 Adapter operation counts and the game error log are checked after the process
@@ -45,7 +54,7 @@ not remeasure labels, and a physical-coordinate mouse click tests viewport
 scaling. E2E window titles are unique so tests can coexist with a running game.
 
 Each successful playback runtime retains `e2e-first-launch.txt`, `e2e-result.txt`
-(the restart receipt), `adapter-trace.txt`, `Error.log`, and four
+(the restart receipt), `adapter-trace.txt`, `Error.log`, and five
 actual OpenGL screenshots. A timeout or unexpected game exception fails the run.
 
 Real USDB authentication/search/cache and an actual media installation are

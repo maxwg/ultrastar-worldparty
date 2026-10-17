@@ -8,6 +8,7 @@ import sys
 parser = argparse.ArgumentParser()
 parser.add_argument('--runtime', type=Path, required=True)
 parser.add_argument('--cancel-download', action='store_true')
+parser.add_argument('--pitch-control', choices=('wrong', 'silence', 'rap'))
 args = parser.parse_args()
 runtime = args.runtime.resolve()
 repo = Path(__file__).resolve().parents[2]
@@ -18,6 +19,7 @@ spec.loader.exec_module(owner)
 os.environ['SDL_AUDIODRIVER'] = 'dummy'
 os.environ.pop('ULTRASTAR_E2E_RESTART', None)
 os.environ['ULTRASTAR_E2E_CANCEL'] = '1' if args.cancel_download else '0'
+os.environ['ULTRASTAR_E2E_PITCH_CONTROL'] = args.pitch_control or 'normal'
 result = owner.run_owned([str(runtime/'WorldPartyE2E.exe')], cwd=str(runtime),
                          timeout=95, stdout='capture', max_output_bytes=262144)
 receipt = runtime/'e2e-result.txt'

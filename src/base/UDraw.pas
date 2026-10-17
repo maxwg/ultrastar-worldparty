@@ -122,7 +122,7 @@ type
     Lines, Player, Space: Integer;
   end;
   TPitchTracePoint = record
-    Beat, Midi, Volume: Double;
+    Beat, Midi: Double;
     Valid: Boolean;
   end;
   TPitchTrace = record
@@ -141,11 +141,34 @@ begin
   PitchPanelCount := 0;
 end;
 
+function PitchTargetAtBeat(const Line: TLine; Beat: Double): Double;
+var
+  I, FirstPitched, PreviousPitched: Integer;
+begin
+  FirstPitched := -1;
+  PreviousPitched := -1;
+  for I := 0 to Line.HighNote do
+    if Line.Note[I].NoteType in [ntNormal, ntGolden, ntRap, ntRapGolden] then
+    begin
+      if FirstPitched < 0 then FirstPitched := I;
+      if Line.Note[I].Start <= Beat then PreviousPitched := I;
+      if (Line.Note[I].Start <= Beat) and
+         (Beat < Line.Note[I].Start + Line.Note[I].Length) then
+        Exit(Line.Note[I].Tone + 60);
+    end;
+  if PreviousPitched >= 0 then
+    Result := Line.Note[PreviousPitched].Tone + 60
+  else if FirstPitched >= 0 then
+    Result := Line.Note[FirstPitched].Tone + 60
+  else
+    Result := 60;
+end;
+
 { Draw after every player's target/scoring bars, so overlays stay on top. }
 procedure DrawPitchOverlays;
 var
   P, N, Cents, T: Integer;
-  Scale, PX, PY, H, MinY, MaxY, TX, TY, TX2, TY2: Real;
+  Scale, PX, PY, RawPY, FoldedMidi, PreviousMidi, H, MinY, MaxY, TX, TY, TX2, TY2: Real;
   Estimate: TPitchEstimate;
   LabelText: UTF8String;
 begin
@@ -188,6 +211,8 @@ begin
              ((Count > 0) and (LyricsState.MidBeatD < Points[Count-1].Beat)) or
              (Cardinal(SDL_GetTicks-LastTick) > 1000) then Count := 0;
           LineStart := Note[0].Start;
+          if (Count > 0) and (Cardinal(SDL_GetTicks-LastTick) > 150) then
+            Count := 0;
           if (Count = 0) or (Cardinal(SDL_GetTicks-LastTick) >= 33) then
           begin
             if Count = Length(Points) then
@@ -196,8 +221,8 @@ begin
               Dec(Count);
             end;
             Points[Count].Beat := LyricsState.MidBeatD;
-            Points[Count].Midi := Estimate.Midi;
-            Points[Count].Volume := Estimate.Volume;
+            Points[Count].Midi := FoldPitchToTarget(Estimate.Midi,
+              PitchTargetAtBeat(CurrentSong.Lines[Lines].Line[CurrentSong.Lines[Lines].Current], LyricsState.MidBeatD));
             Points[Count].Valid := Estimate.Valid;
             Inc(Count);
             LastTick := SDL_GetTicks;
@@ -205,11 +230,14 @@ begin
         end;
         PX := X + (LyricsState.MidBeatD-Note[0].Start)*Scale + 10*ScreenX;
         if (PX < X+10*ScreenX) or (PX > X+W+10*ScreenX) then Continue;
-        { UltraStar pitch zero is MIDI 60/C4. Never fold the detected octave. }
-        PY := Y - (Estimate.Midi-60-BaseNote)*Space/2;
+        { Keep the trace in the same octave that UltraStar scoring compares. }
+        FoldedMidi := FoldPitchToTarget(Estimate.Midi,
+          PitchTargetAtBeat(CurrentSong.Lines[Lines].Line[CurrentSong.Lines[Lines].Current], LyricsState.MidBeatD));
+        PY := Y - (FoldedMidi-60-BaseNote)*Space/2;
+        RawPY := Y - (Estimate.Midi-60-BaseNote)*Space/2;
         MinY := Y-100;
         MaxY := Y+20;
-        H := 0.6 + Min(2.4, Estimate.Volume*12);
+        H := 1.6;
         glDisable(GL_TEXTURE_2D);
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -220,20 +248,22 @@ begin
           begin
             TX := X+(Points[T-1].Beat-Note[0].Start)*Scale+10*ScreenX;
             TX2 := X+(Points[T].Beat-Note[0].Start)*Scale+10*ScreenX;
-            TY := Y-(Points[T-1].Midi-60-BaseNote)*Space/2;
-            TY2 := Y-(Points[T].Midi-60-BaseNote)*Space/2;
-            H := 0.6 + Min(2.4, Points[T].Volume*12);
+            PreviousMidi := Points[T-1].Midi;
+            FoldedMidi := Points[T].Midi;
+            TY := Y-(PreviousMidi-60-BaseNote)*Space/2;
+            TY2 := Y-(FoldedMidi-60-BaseNote)*Space/2;
             if (TX >= X+10*ScreenX) and (TX2 <= X+W+10*ScreenX) and
+               (Abs(FoldedMidi-PreviousMidi) <= 7) and
                (TY >= MinY) and (TY <= MaxY) and (TY2 >= MinY) and (TY2 <= MaxY) then
             begin
-              glColor4f(0.05, 0.10, 0.15, 0.4);
+              glColor4f(0.05, 0.08, 0.12, 0.7);
               glBegin(GL_QUADS);
-              glVertex2f(TX, TY-H/2-0.5);
-              glVertex2f(TX2, TY2-H/2-0.5);
-              glVertex2f(TX2, TY2+H/2+0.5);
-              glVertex2f(TX, TY+H/2+0.5);
+              glVertex2f(TX, TY-H/2-1);
+              glVertex2f(TX2, TY2-H/2-1);
+              glVertex2f(TX2, TY2+H/2+1);
+              glVertex2f(TX, TY+H/2+1);
               glEnd;
-              glColor4f(0.8, 0.95, 1, 0.6);
+              glColor4f(1, 0.97, 0.78, 0.95);
               glBegin(GL_QUADS);
               glVertex2f(TX, TY-H/2);
               glVertex2f(TX2, TY2-H/2);
@@ -247,8 +277,8 @@ begin
           Cents := Round((Estimate.Midi-Round(Estimate.Midi))*100);
           LabelText := PitchName(Round(Estimate.Midi)) + ' ' +
             FormatFloat('0.0', Estimate.Hz) + ' Hz ' + IntToStr(Cents) + 'c';
-          if PY < MinY then LabelText := LabelText + ' (above range)';
-          if PY > MaxY then LabelText := LabelText + ' (below range)';
+          if RawPY < MinY then LabelText := LabelText + ' (above range)';
+          if RawPY > MaxY then LabelText := LabelText + ' (below range)';
           glColor4f(0.8, 0.95, 1, 0.75);
           SetFontPos(X+W+10*ScreenX-glTextWidth(LabelText), MaxY+3);
           glPrint(LabelText);
@@ -728,6 +758,7 @@ begin
     PitchPanels[PitchPanelCount].Space := Space;
     Inc(PitchPanelCount);
   end;
+  if Ini.DetectedPitch = 1 then Exit;
   Rec.Right := 0;
   Rec.Left := 0;
   Rec.Top := 0;

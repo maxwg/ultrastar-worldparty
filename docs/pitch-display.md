@@ -1,18 +1,68 @@
-# Pitch practice display
+# Pitch and microphone feedback
 
-The `[Advanced]` INI settings keep target-note names and the detected pitch line
-independent from the optional current-pitch text:
+The thin, stable pitch trace is **On by default**. It replaces the thick sung
+bars while retaining the target notes. It follows fractional pitch rather than
+snapping to a target; octave folding matches UltraStar's scoring convention.
+A fixed width, contrasting outline, short smoothing filter and rejection of
+single-frame octave glitches keep it readable. Unvoiced passages break the line.
 
-- `NoteNames`: labels target notes with scientific note names (e.g. G#4).
-- `DetectedPitch`: shows a subtle volume-weighted continuous pitch trace above the note bars. This stays On by default.
-- `PitchReadout`: shows the current detected note, frequency and cents offset when `DetectedPitch` is enabled. It is Off by default, so the text can be hidden while the trace remains visible. Turning `DetectedPitch` off also hides the readout.
+- **F6 / NoteNames:** target note labels (C4, G#4).
+- **F7 / DetectedPitch:** thin trace; Off restores the original sung bars.
+- **F8 / PitchReadout:** optional true sung note, Hz and cents. Off by default.
 
-The controls are available in Options → Advanced. During singing, F6 toggles target-note names, F7 toggles the detected-pitch display (trace and any enabled readout), and F8 toggles only the current-pitch text preference. Settings persist. Scoring is unchanged. Rap/freestyle notes have no pitched label. Labels too wide for their target note are omitted to avoid collisions.
+These switches persist under `[Advanced]` and are available in Options → Advanced.
+The readout keeps the actual sung octave even when the trace is folded to the
+chart. Chart pitch zero is C4/MIDI 60, per the [UltraStar format](https://usdx.eu/format/).
+Pause, phrase changes and capture gaps clear stale connections. Rap/freestyle
+notes have no scientific pitch label.
 
-The display estimator consumes captured PCM directly, independently of the existing semitone-only scoring detector. It covers 50–1500 Hz, analyzes only the newest 4096 samples, rejects non-finite sample rates, and uses a normalized difference minimum with sub-sample interpolation. It never snaps the plotted pitch to a semitone or folds it into the target octave. Frequency is an estimate, not a ground-truth measurement; noise, polyphony, microphone quality and strong harmonics can affect it. Silence/DC/unvoiced noise are rejected in deterministic tests.
+## Shared detector and scoring
 
-The official UltraStar format defines pitch zero as C4/MIDI 60: https://usdx.eu/format/. The overlay uses this exact coordinate convention. Off-screen pitch is identified as above/below range rather than silently octave-shifted. Current pitch is hidden while paused or outside the displayed phrase.
+Display and scoring use the same continuous YIN-style normalized-difference
+estimator with sub-sample interpolation. Its source is the original
+[YIN method](https://doi.org/10.1121/1.1458024). Analysis updates at most every
+20 ms when fresh PCM is available, independently of score beats. Repeated calls
+reuse the result. The capture mutex protects only a short PCM snapshot, never DSP.
+Bounded, decimated analysis uses fixed scratch arrays rather than per-frame
+allocations. The input window remains the newest 4096 samples.
 
-`tests/pitch_display_test.pas` exercises the real estimator at 44.1/48 kHz, fractional pitches, RMS volume, silence, DC, noise and invalid input. These synthetic tests do not establish live microphone accuracy or SDL rendering correctness.
+Easy remains the default. The traditional Easy/Medium/Hard tolerances are
+preserved, including the half-semitone quantization margin. Brief unvoiced gaps
+may keep the last pitch for **at most 60 ms**, only inside an already-hit chart
+note. A new note, sustained silence or confidently wrong pitch cannot use this
+allowance. Rap keeps its energy-based activity scoring, including unpitched
+syllables. The visible line never fills these unvoiced gaps. Disconnected capture
+expires after 250 ms and clears both display and scoring state.
 
-The latest regression corpus also covers low/high-register voices with a stronger second harmonic, moderate noise, long-buffer freshness and invalid floating-point rates. The trace is cleared across pause and display toggles rather than connecting stale segments.
+## Automatic microphone sensitivity
+
+Options → Microphones → Threshold now defaults to **Auto**. It adapts the voice
+gate per channel to the unvoiced noise floor and normalizes pitch comparisons,
+so a quiet microphone does not need manual boost to score. Noise-floor increases
+are slow; decreases are fast, preventing a breath from hiding the next vowel.
+Continuous voiced input does not train the noise floor. The previous 5–20%
+manual gates remain available and existing saved manual choices are preserved.
+This installation selects Auto. Existing device/player assignments and manual
+volume/boost controls remain available. Auto sensitivity does not repair already
+clipped audio or measure hardware latency.
+
+## Verification
+
+`tests/run_pitch_tests.ps1 -CompilerRoot <root>` builds and runs synthetic
+pitch/tracker regressions. They cover fractional pitch, strong harmonics, noise,
+quiet voices, vibrato, real jumps, octave glitches, grace expiry and difficulty
+boundaries. `record_capture_state_test.pas` additionally checks the production
+capture path, channel remapping, reconnect, cache reuse and stale input.
+
+`tests/library_e2e/run.ps1` injects two chart-aligned synthetic microphone notes
+through the real capture path in the Windows SDL/OpenGL application. It checks
+actual score accumulation and captures singing screenshots, alongside search,
+download and restart tests. It uses dummy playback audio, not physical hardware.
+
+The [real-vocal benchmark](vocal-benchmark.md) uses isolated human singing and
+independent note/F0 annotations. Synthetic and recorded-audio tests cannot prove
+live accuracy for every microphone, room or singer. Capture backends normally
+use 44.1 kHz; 50–1500 Hz coverage is tested at 44.1/48 kHz. At unusually high
+sample rates, the fixed window limits low-frequency coverage (about 95 Hz at
+192 kHz). Overlapping singers or loud backing music can also confuse a
+monophonic pitch detector.

@@ -49,7 +49,8 @@ type
       fVoiceStream: TAudioVoiceStream; // stream for voice passthrough
       fAnalysisBufferLock: PSDL_Mutex;
       fAudioFormat: TAudioFormatInfo;
-      fLastCaptureTick: Cardinal;
+      fLastCaptureTick, fCaptureGeneration, fAnalyzedGeneration, fLastAnalysisTick: Cardinal;
+      fPitchTracker: TPitchTracker;
 
       function GetToneString: string; // converts a tone to its string represenatation;
 
@@ -59,10 +60,6 @@ type
       procedure StartCapture(Format: TAudioFormatInfo);
       procedure StopCapture();
 
-      // we call it to analyze sound by checking Autocorrelation
-      procedure AnalyzeByAutocorrelation;
-      // use this to check one frequency by Autocorrelation
-      function AnalyzeAutocorrelationFreq(Freq: real): real;
     public
       AnalysisBuffer:  array[0..4095] of smallint; // newest 4096 samples
       AnalysisBufferSize: integer; // number of samples of BufferArray to analyze
@@ -72,9 +69,11 @@ type
       // pitch detection
       // TODO: remove ToneValid, set Tone/ToneAbs=-1 if invalid instead
       ToneValid:    boolean;    // true if Tone contains a valid value (otherwise it contains noise)
+      VoiceActive:  boolean;    // recent energy passed the configured activity gate
       Tone:         integer;    // tone relative to one octave (e.g. C2=C3=C4). Range: 0-11
-      RawPitch: TPitchEstimate; // continuous, never octave-folded for scoring
-      ToneAbs:      integer;    // absolute (full range) tone (e.g. C2<>C3). Range: 0..NumHalftones-1
+      RawPitch: TPitchEstimate; // smoothed actual pitch; chart folding is a display policy
+      ScorePitch: TPitchEstimate; // may bridge at most 60ms, same-note check in UNote
+      ToneAbs:      integer;    // semitone index relative to C2; may extend beyond the legacy meter
 
       // methods
       constructor Create;
@@ -255,6 +254,7 @@ begin
   LogBuffer := TMemoryStream.Create;
   fAnalysisBufferLock := SDL_CreateMutex();
   AnalysisBufferSize := Length(AnalysisBuffer);
+  ResetPitchTracker(fPitchTracker);
 end;
 
 destructor TCaptureBuffer.Destroy;
@@ -285,8 +285,12 @@ begin
   LockAnalysisBuffer();
   try
     fLastCaptureTick := 0;
+    fCaptureGeneration := 0; fAnalyzedGeneration := 0; fLastAnalysisTick := 0;
+    ResetPitchTracker(fPitchTracker);
+    FillChar(ScorePitch, SizeOf(ScorePitch), 0);
     FillChar(RawPitch, SizeOf(RawPitch), 0);
     ToneValid := false;
+    VoiceActive := false;
     Tone := -1;
     ToneAbs := -1;
     FillChar(AnalysisBuffer[0], Length(AnalysisBuffer) * SizeOf(SmallInt), 0);
@@ -333,7 +337,11 @@ begin
     for i := 0 to High(AnalysisBuffer)-SampleCount do
       AnalysisBuffer[i] := AnalysisBuffer[i+SampleCount];
 
-    if SampleCount > 0 then fLastCaptureTick := SDL_GetTicks;
+    if SampleCount > 0 then
+    begin
+      fLastCaptureTick := SDL_GetTicks;
+      Inc(fCaptureGeneration);
+    end;
     // copy new samples to analysis buffer
     Move(Buffer[BufferOffset], AnalysisBuffer[Length(AnalysisBuffer)-SampleCount],
          SampleCount * SizeOf(SmallInt));
@@ -355,114 +363,68 @@ end;
 
 procedure TCaptureBuffer.AnalyzeBuffer;
 var
-  Volume:      single;
-  MaxVolume:   single;
-  SampleIndex: integer;
-  Threshold:   single;
+  Snapshot: array[0..4095] of SmallInt;
+  Tick, Generation: Cardinal;
+  Rate, Peak: Double;
+  I: Integer;
+  Automatic: Boolean;
+  ActivityGate: Double;
+  Estimate: TPitchEstimate;
 begin
-  FillChar(RawPitch, SizeOf(RawPitch), 0);
-  ToneValid := false;
-  ToneAbs := -1;
-  Tone    := -1;
-
+  Tick := SDL_GetTicks;
   LockAnalysisBuffer();
   try
-
-    // A disconnected microphone must not keep scoring its last captured note.
-    if (fLastCaptureTick = 0) or
-       (Cardinal(SDL_GetTicks - fLastCaptureTick) >= 250) then Exit;
-
-    if Ini.DetectedPitch = 1 then
-      RawPitch := EstimatePitch(AnalysisBuffer, AudioFormat.SampleRate);
-
-    // find maximum volume of first 1024 samples
-    MaxVolume := 0;
-    for SampleIndex := 0 to 1023 do
+    if (fLastCaptureTick = 0) or (Cardinal(Tick-fLastCaptureTick) >= 250) or
+       not Assigned(fAudioFormat) then
     begin
-      Volume := Abs(AnalysisBuffer[SampleIndex]) / -Low(Smallint);
-      if Volume > MaxVolume then
-         MaxVolume := Volume;
+      FillChar(RawPitch, SizeOf(RawPitch), 0);
+      FillChar(ScorePitch, SizeOf(ScorePitch), 0);
+      ResetPitchTracker(fPitchTracker);
+      ToneValid := False; ToneAbs := -1; Tone := -1;
+      VoiceActive := False;
+      Exit;
     end;
-
-    Threshold := IThresholdVals[Ini.ThresholdIndex];
-
-    // check if signal has an acceptable volume (ignore background-noise)
-    if MaxVolume >= Threshold then
+    { Reuse work across scoring/render calls and never analyze the same PCM twice. }
+    if (fCaptureGeneration = fAnalyzedGeneration) or
+       ((fLastAnalysisTick <> 0) and (Cardinal(Tick-fLastAnalysisTick) < 20)) then
     begin
-      // analyse the current voice pitch
-      AnalyzeByAutocorrelation;
-      ToneValid := true;
+      ScorePitch := ScoringPitch(fPitchTracker, RawPitch, Tick);
+      Exit;
     end;
-
+    Move(AnalysisBuffer[0], Snapshot[0], SizeOf(Snapshot));
+    Rate := fAudioFormat.SampleRate;
+    Generation := fCaptureGeneration;
   finally
     UnlockAnalysisBuffer();
   end;
-end;
-
-procedure TCaptureBuffer.AnalyzeByAutocorrelation;
-var
-  ToneIndex: integer;
-  CurFreq:   real;
-  CurWeight: real;
-  MaxWeight: real;
-  MaxTone:   integer;
-const
-  HalftoneBase = 1.05946309436; // 2^(1/12) -> HalftoneBase^12 = 2 (one octave)
-begin
-  // prepare to analyze
-  MaxWeight := -1;
-  MaxTone := 0; // this is not needed, but it satifies the compiler
-
-  // analyze halftones
-  // Note: at the lowest tone (~65Hz) and a buffer-size of 4096
-  // at 44.1 (or 48kHz) only 6 (or 5) samples are compared, this might be
-  // too few samples -> use a bigger buffer-size
-  for ToneIndex := 0 to NumHalftones-1 do
+  { DSP must never hold the capture callback's mutex. }
+  fAnalyzedGeneration := Generation;
+  fLastAnalysisTick := Tick;
+  Automatic := Ini.ThresholdIndex = High(IThreshold);
+  Estimate := EstimatePitch(Snapshot, Rate);
+  if not Automatic then
   begin
-    CurFreq := BaseToneFreq * Power(HalftoneBase, ToneIndex);
-    CurWeight := AnalyzeAutocorrelationFreq(CurFreq);
-
-    // TODO: prefer higher frequencies (use >= or use downto)
-    if (CurWeight > MaxWeight) then
-    begin
-      // this frequency has a higher weight
-      MaxWeight := CurWeight;
-      MaxTone   := ToneIndex;
-    end;
+    Peak := 0;
+    for I := Max(0, Length(Snapshot)-Round(Rate*0.020)) to High(Snapshot) do
+      Peak := Max(Peak, Abs(Snapshot[I])/32768.0);
+    Estimate.Valid := Estimate.Valid and (Peak >= IThresholdVals[EnsureRange(Ini.ThresholdIndex, 0, High(IThresholdVals))]);
   end;
-
-  ToneAbs := MaxTone;
-  Tone    := MaxTone mod 12;
-end;
-
-// result medium difference
-function TCaptureBuffer.AnalyzeAutocorrelationFreq(Freq: real): real;
-var
-  Dist:                   real;    // distance (0=equal .. 1=totally different) between correlated samples
-  AccumDist:              real;    // accumulated distances
-  SampleIndex:            integer; // index of sample to analyze
-  CorrelatingSampleIndex: integer; // index of sample one period ahead
-  SamplesPerPeriod:       integer; // samples in one period
-begin
-  SampleIndex := 0;
-  SamplesPerPeriod := Round(AudioFormat.SampleRate/Freq);
-  CorrelatingSampleIndex := SampleIndex + SamplesPerPeriod;
-
-  AccumDist := 0;
-
-  // compare correlating samples
-  while (CorrelatingSampleIndex < AnalysisBufferSize) do
+  RawPitch := TrackPitch(fPitchTracker, Estimate, Tick, Automatic);
+  ScorePitch := ScoringPitch(fPitchTracker, RawPitch, Tick);
+  if Automatic then
   begin
-    // calc distance (correlation: 1-dist) to corresponding sample in next period
-    Dist := Abs(AnalysisBuffer[SampleIndex] - AnalysisBuffer[CorrelatingSampleIndex]) /
-            High(Word);
-    AccumDist := AccumDist + Dist;
-    Inc(SampleIndex);
-    Inc(CorrelatingSampleIndex);
+    ActivityGate := Max(0.0012, fPitchTracker.NoiseFloor * 2.5);
+    VoiceActive := Estimate.RecentVolume >= ActivityGate;
+  end
+  else
+    VoiceActive := Peak >= IThresholdVals[EnsureRange(Ini.ThresholdIndex, 0, High(IThresholdVals))];
+  ToneValid := RawPitch.Valid;
+  Tone := -1; ToneAbs := -1;
+  if ToneValid then
+  begin
+    ToneAbs := Round(RawPitch.Midi)-36;
+    Tone := ((Round(RawPitch.Midi) mod 12)+12) mod 12;
   end;
-
-  // return "inverse" average distance (=correlation)
-  Result := 1 - AccumDist / AnalysisBufferSize;
 end;
 
 function TCaptureBuffer.MaxSampleVolume: single;
@@ -485,15 +447,10 @@ begin;
   result := lMaxVol / -Low(Smallint);
 end;
 
-const
-  ToneStrings: array[0..11] of string = (
-    'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'
-  );
-
 function TCaptureBuffer.GetToneString: string;
 begin
   if (ToneValid) then
-    Result := ToneStrings[Tone] + IntToStr(ToneAbs div 12 + 2)
+    Result := PitchName(Round(RawPitch.Midi))
   else
     Result := '-';
 end;
