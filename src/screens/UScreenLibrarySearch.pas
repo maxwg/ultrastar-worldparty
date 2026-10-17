@@ -2,11 +2,16 @@ unit UScreenLibrarySearch;
 {$mode objfpc}{$H+}
 {$I switches.inc}
 interface
-uses Classes, sdl2, UMenu, UTexture, USongCatalogBridge, ULibraryGridLayout;
+uses Classes, sdl2, UMenu, UTexture, USongCatalogBridge, ULibraryGridLayout, ULibrarySearchIndex, ULibraryCoverLoader, UMenuButton;
 type
   TLibraryRow = record
     LocalIndex, RemoteIndex: integer;
-    Caption, Artist, Title: UTF8String;
+    Artist, Title, CoverPath: UTF8String;
+  end;
+  TLibraryCachedCover = record
+    Key: UTF8String;
+    Texture: TTexture;
+    Used: QWord;
   end;
   TScreenLibrarySearch = class(TMenu)
   private
@@ -16,13 +21,28 @@ type
     FLastInstalled: string;
     FQueryText, FAccountText, FPasswordText, FLoginText, FStatusText, FHintText, FCountText, FPageText: integer;
     FRowTexts, FArtistTexts, FBadgeTexts: array[0..LibraryGridPageSize-1] of integer;
-    FCovers: array[0..LibraryGridPageSize-1] of TTexture;
-    FCoverKeys: array[0..LibraryGridPageSize-1] of UTF8String;
+    FCoverCache: array of TLibraryCachedCover;
+    FCoverLoader: TLibraryCoverLoader;
+    FGridButtons: array[0..LibraryGridPageSize-1] of TButton;
+    FVisibleCovers: TLibraryCoverPaths;
+    FIndex: TLibrarySearchIndex;
+    FLocalResult: TLibraryIndexResult;
+    FIdentityKeys: TStringList;
+    FLocalRevision: LongInt;
+    FLocalDirty, FViewDirty, FCoversDirty, FKeysReady: boolean;
+    FSessionView: UTF8String;
+    FSelectionCaption: UTF8String;
+    {$IFDEF LIBRARY_E2E}FLocalSubmissions, FViewBuilds: integer;{$ENDIF}
     FDefaultCover: TTexture;
+    procedure StartIndex;
+    procedure PollIndex;
+    procedure PollCovers;
+    function CoverIndex(const Key: UTF8String): integer;
     procedure DrawGrid;
     procedure ReleaseCovers;
   private
     FFocus, FTop, FSelected, FRemoteCount, FSource: integer;
+    FMouseX, FMouseY: integer;
     FDetailsID: Int64;
     FSearchDue: QWord;
     FSignIn, FRescan, FLoginQueued, FLoginInFlight, FAutoLoginAttempted, FAutoDownload, FLeaving: boolean;
@@ -41,6 +61,7 @@ type
     procedure Open(const Query: UTF8String);
     procedure OnHide; override;
     function AcceptsTransitionInput: boolean; override;
+    function AcceptsRepeatedKey(Key: cardinal): boolean; override;
     function Draw: boolean; override;
     function ParseInput(Key: cardinal; CharCode: UCS4Char; Down: boolean): boolean; override;
     function ParseMouse(MouseButton: integer; Down: boolean; X, Y: integer): boolean; override;
@@ -52,14 +73,38 @@ function LibrarySearchTestSnapshot(out Query: UTF8String; out Selected, Rows, Re
 function LibrarySearchTestLocalFirst: boolean;
 function LibrarySearchTestDownloading: boolean;
 function LibrarySearchTestTextFits: boolean;
+function LibrarySearchTestSubmissions: integer;
+function LibrarySearchTestViewBuilds: integer;
+function LibrarySearchTestCoverDecodes: integer;
+function LibrarySearchTestArtReady: boolean;
 {$ENDIF}
 implementation
 uses SysUtils, Math, IniFiles, UCommon, dglOpenGL, UDrawTexture, UThemes, UGraphic, UPlatform, UCommandLine,
   UUnicodeUtils, USongIdentity, USong, USongs, UScreenSong, UScreenMain,
-  USongCatalogInput, USongCatalogLayout, UCatalogAutoSignIn, TextGL;
+  USongCatalogInput, USongCatalogLayout, UCatalogAutoSignIn, TextGL, UPath;
 var LibrarySearch: TScreenLibrarySearch;
 
 {$IFDEF LIBRARY_E2E}
+function LibrarySearchTestCoverDecodes: integer;
+begin Result := LibrarySearch.FCoverLoader.DecodeCount; end;
+
+function LibrarySearchTestArtReady: boolean;
+var I, Cached: integer;
+begin
+  Result := false;
+  for I := 0 to Min(5, High(LibrarySearch.FRows)) do begin
+    Cached := LibrarySearch.CoverIndex(LibrarySearch.FRows[I].CoverPath);
+    if (Cached < 0) or (LibrarySearch.FCoverCache[Cached].Texture.TexNum = 0) then Exit;
+  end;
+  Result := Length(LibrarySearch.FRows) >= 6;
+end;
+
+function LibrarySearchTestSubmissions: integer;
+begin Result := LibrarySearch.FLocalSubmissions; end;
+
+function LibrarySearchTestViewBuilds: integer;
+begin Result := LibrarySearch.FViewBuilds; end;
+
 function LibrarySearchTestTextFits: boolean;
 var I: integer; R: TLibraryTileRect;
 begin
@@ -116,11 +161,17 @@ begin
 end;
 
 constructor TScreenLibrarySearch.Create;
-var I: integer; BG: TThemeBackground;
+var I: integer;
 begin
   inherited Create;
-  BG := DEFAULT_BACKGROUND; BG.Color.R := 0.025; BG.Color.G := 0.035; BG.Color.B := 0.07;
-  AddBackground(BG);
+  FMouseX := -1; FMouseY := -1;
+  FIdentityKeys := TStringList.Create;
+  FIdentityKeys.Sorted := true; FIdentityKeys.CaseSensitive := true;
+  FCoverLoader := TLibraryCoverLoader.Create;
+  for I := 0 to High(FGridButtons) do begin
+    FGridButtons[I] := TButton.Create;
+    FGridButtons[I].DeselectInt := 0.92;
+  end;
   AddText(24, 16, 0, 25, 1, 1, 1, 'Song search');
   AddText(720, 24, 0, 14, 0.75, 0.85, 1, 'Back');
   AddText(720, 64, 0, 14, 0.75, 0.85, 1, 'Clear');
@@ -142,7 +193,10 @@ begin
 end;
 
 destructor TScreenLibrarySearch.Destroy;
+var I: integer;
 begin
+  FreeAndNil(FIndex); FreeAndNil(FCoverLoader); FIdentityKeys.Free;
+  for I := 0 to High(FGridButtons) do FGridButtons[I].Free;
   ClearPassword;
   ReleaseCovers;
   if FDefaultCover.TexNum <> 0 then UTexture.Texture.UnLoadTexture(FDefaultCover);
@@ -193,65 +247,97 @@ begin
   FQuery := Query; FLastQuery := #1; FSelected := 0; FTop := 0;
   FFocus := 0; FDetailsID := 0; FSignIn := false;
   FRemoteCount := -1; FLoginQueued := false; FAutoDownload := false;
-  StartSession;
+  StartIndex; StartSession;
   Changed;
+end;
+
+procedure TScreenLibrarySearch.StartIndex;
+var Snapshot: TLibraryIndexEntries; I, N: integer; Song: TSong;
+begin
+  FreeAndNil(FIndex); FLocalResult.Entries := nil; FLocalResult.Query := #1;
+  FKeysReady := false; FIdentityKeys.Clear;
+  SetLength(Snapshot, Length(CatSongs.Song)); N := 0;
+  for I := 0 to High(CatSongs.Song) do begin
+    Song := CatSongs.Song[I]; if Song.Main then Continue;
+    Snapshot[N].LocalIndex := I; Snapshot[N].Artist := Song.Artist; Snapshot[N].Title := Song.Title;
+    if Song.Cover.IsSet then Snapshot[N].CoverPath := Song.Path.Append(Song.Cover).ToUTF8;
+    Inc(N);
+  end;
+  SetLength(Snapshot, N); FIndex := TLibrarySearchIndex.Create(Snapshot);
 end;
 
 procedure TScreenLibrarySearch.Changed;
 begin
-  FSearchDue := GetTickCount64 + 200;
+  FSearchDue := GetTickCount64 + 150;
   FDetailsID := 0; FSelected := 0; FTop := 0;
-  BuildRows;
+  FLocalDirty := true; FViewDirty := true; FCoversDirty := true;
+  // Text handlers never scan songs, decode images, or measure the grid.
+  FRows := nil;
+end;
+
+procedure TScreenLibrarySearch.PollIndex;
+var Value: TLibraryIndexResult; I: integer;
+begin
+  if not Assigned(FIndex) then Exit;
+  if FLocalDirty then begin
+    {$IFDEF LIBRARY_E2E}Inc(FLocalSubmissions);{$ENDIF}
+    FLocalRevision := FIndex.Submit(FQuery); FLocalDirty := false;
+  end;
+  if not FIndex.TryTake(Value) then Exit;
+  if (Value.Revision = FLocalRevision) and (Value.Query = FQuery) then begin
+    FLocalResult := Value;
+    if not FKeysReady then begin
+      for I := 0 to High(Value.Keys) do FIdentityKeys.Add(string(Value.Keys[I]));
+      FKeysReady := true;
+    end;
+    BuildRows;
+  end;
 end;
 
 procedure TScreenLibrarySearch.BuildRows;
-var I, N, LocalCount, RemoteCount: integer; Song: TSong;
-  Remote: TCatalogSearchResult; Q, Key: UTF8String; Seen: TStringList;
-  procedure AddRow(L, R: integer; const Caption: UTF8String);
-  begin
-    N := Length(FRows); SetLength(FRows, N + 1);
-    FRows[N].LocalIndex := L; FRows[N].RemoteIndex := R; FRows[N].Caption := Caption;
-    if L >= 0 then begin FRows[N].Artist := CatSongs.Song[L].Artist; FRows[N].Title := CatSongs.Song[L].Title; end
-    else if R >= 0 then begin FRows[N].Artist := FSession.ResultItems[R].Artist; FRows[N].Title := FSession.ResultItems[R].Title; end;
-  end;
+var I, N, LocalCount, RemoteCount: integer; Remote: TCatalogSearchResult;
+  Key: UTF8String; RemoteKeys: TStringList;
 begin
-  SetLength(FRows, 0); LocalCount := 0; RemoteCount := 0;
-  Q := UTF8LowerCase(Trim(FQuery));
-  Seen := TStringList.Create;
+  FViewDirty := true; FCoversDirty := true;
+  if FLocalResult.Query <> FQuery then Exit;
+  LocalCount := Length(FLocalResult.Entries); RemoteCount := 0;
+  SetLength(FRows, LocalCount + 30);
+  for I := 0 to LocalCount - 1 do begin
+    FRows[I].LocalIndex := FLocalResult.Entries[I].LocalIndex;
+    FRows[I].RemoteIndex := -1;
+    FRows[I].Artist := FLocalResult.Entries[I].Artist;
+    FRows[I].Title := FLocalResult.Entries[I].Title;
+    FRows[I].CoverPath := FLocalResult.Entries[I].CoverPath;
+  end;
+  RemoteKeys := TStringList.Create;
   try
-    Seen.Sorted := true; Seen.CaseSensitive := true;
-    for I := 0 to High(CatSongs.Song) do begin
-      Song := CatSongs.Song[I];
-      if Song.Main then Continue;
-      Key := SongIdentity(Song.Artist, Song.Title);
-      if (Trim(Song.Artist) <> '') and (Trim(Song.Title) <> '') then begin
-        if Seen.IndexOf(string(Key)) >= 0 then Continue;
-        Seen.Add(string(Key));
-      end;
-      if (Q = '') or (Pos(Q, UTF8LowerCase(Song.Artist + ' ' + Song.Title)) > 0) then begin
-        AddRow(I, -1, Song.Artist + ' - ' + Song.Title);
-        Inc(LocalCount);
-      end;
-    end;
-    if Assigned(FSession) and (FLastQuery = FQuery) and (Q <> '') then
+    RemoteKeys.Sorted := true; RemoteKeys.CaseSensitive := true;
+    if Assigned(FSession) and (FLastQuery = FQuery) and (Trim(FQuery) <> '') then
       for I := 0 to FSession.ResultCount - 1 do begin
-        Remote := FSession.ResultItems[I]; Key := SongIdentity(Remote.Artist, Remote.Title);
+        Remote := FSession.ResultItems[I];
         if (Trim(Remote.Artist) <> '') and (Trim(Remote.Title) <> '') then begin
-          if Seen.IndexOf(string(Key)) >= 0 then Continue;
-          Seen.Add(string(Key));
+          Key := SongIdentity(Remote.Artist, Remote.Title);
+          if (FIdentityKeys.IndexOf(string(Key)) >= 0) or (RemoteKeys.IndexOf(string(Key)) >= 0) then Continue;
+          RemoteKeys.Add(string(Key));
         end;
-        AddRow(-1, I, Remote.Artist + ' - ' + Remote.Title);
+        N := LocalCount + RemoteCount;
+        FRows[N].LocalIndex := -1; FRows[N].RemoteIndex := I;
+        FRows[N].Artist := Remote.Artist; FRows[N].Title := Remote.Title; FRows[N].CoverPath := '';
         Inc(RemoteCount);
       end;
-  finally Seen.Free; end;
+  finally RemoteKeys.Free; end;
+  SetLength(FRows, LocalCount + RemoteCount);
   Text[FCountText].Text := Format('YOUR SONGS  %d     /     USDB  %d new', [LocalCount, RemoteCount]);
-  if FSelected >= Length(FRows) then FSelected := Max(0, Length(FRows) - 1);
+  FSelected := Min(FSelected, Max(0, Length(FRows) - 1));
   FTop := Min(FTop, Max(0, ((Max(0, Length(FRows) - 1)) div LibraryGridPageSize) * LibraryGridPageSize));
 end;
 
 procedure TScreenLibrarySearch.Tick;
+var ViewState: UTF8String;
 begin
-  if FLeaving or not Assigned(FSession) then Exit;
+  if FLeaving then Exit;
+  PollIndex; PollCovers;
+  if not Assigned(FSession) then Exit;
   FSession.Poll;
   if not FSession.Busy then FLoginInFlight := false;
   if (FSession.InstalledFolder <> '') and not FSession.Busy and
@@ -291,9 +377,10 @@ begin
     end;
   end;
   if FRemoteCount <> FSession.ResultCount then begin
-    FRemoteCount := FSession.ResultCount;
-    BuildRows;
+    FRemoteCount := FSession.ResultCount; BuildRows;
   end;
+  ViewState := FSession.Status + IntToStr(Ord(FSession.Busy)) + IntToStr(Ord(FSession.Authenticated)) + IntToStr(FSession.DetailLinks.Count);
+  if ViewState <> FSessionView then begin FSessionView := ViewState; FViewDirty := true; end;
 end;
 
 procedure TScreenLibrarySearch.QueueLogin;
@@ -318,6 +405,8 @@ end;
 procedure TScreenLibrarySearch.UpdateView;
 var I, Index, InputLength: integer; Prefix, Caption: UTF8String; R: TLibraryTileRect;
 begin
+  {$IFDEF LIBRARY_E2E}Inc(FViewBuilds);{$ENDIF}
+  FSelectionCaption := '';
   Text[FPasswordText].Visible := FSignIn; Text[FLoginText].Visible := FSignIn;
   SetFontStyle(0); SetFontSize(22); InputLength := 49;
   repeat
@@ -406,7 +495,8 @@ begin
     if Length(FRows) = 0 then begin
       Text[FRowTexts[0]].X := 42; Text[FRowTexts[0]].Y := 240;
       Text[FRowTexts[0]].Align := 0;
-      if Assigned(FSession) and FSession.Busy then Caption := 'Searching USDB...'
+      if FLocalResult.Query <> FQuery then Caption := 'Filtering your songs...'
+      else if Assigned(FSession) and FSession.Busy then Caption := 'Searching USDB...'
       else if Assigned(FSession) and not FSession.Authenticated then Caption := 'No local matches. F2: sign in to search USDB.'
       else Caption := 'No songs found. Try another search.';
       Text[FRowTexts[0]].Text := Caption;
@@ -466,10 +556,16 @@ end;
 function TScreenLibrarySearch.AcceptsTransitionInput: boolean;
 begin Result := true; end;
 
+function TScreenLibrarySearch.AcceptsRepeatedKey(Key: cardinal): boolean;
+begin
+  Result := not ((Key = SDLK_F2) or (Key = SDLK_F3) or
+    (Key = SDLK_TAB) or (Key = SDLK_ESCAPE) or (Key = SDLK_RETURN) or (Key = SDLK_KP_ENTER));
+end;
+
 procedure TScreenLibrarySearch.OnHide;
 begin
   ClearPassword;
-  ReleaseCovers;
+  FCoverLoader.SetPage(nil); FVisibleCovers := nil;
   FLoginQueued := false;
   // Keep an idle, signed-in helper for this application session. Any active
   // request is cancelled on leave; downloader descendants belong to kill-on-close Jobs.
@@ -482,10 +578,61 @@ end;
 procedure TScreenLibrarySearch.ReleaseCovers;
 var I: integer;
 begin
-  for I := 0 to High(FCovers) do begin
-    if FCovers[I].TexNum <> 0 then UTexture.Texture.UnLoadTexture(FCovers[I]);
-    FCoverKeys[I] := '';
+  for I := 0 to High(FCoverCache) do
+    if FCoverCache[I].Texture.TexNum <> 0 then UTexture.Texture.UnLoadTexture(FCoverCache[I].Texture);
+  FCoverCache := nil;
+end;
+
+function TScreenLibrarySearch.CoverIndex(const Key: UTF8String): integer;
+var I: integer;
+begin
+  for I := 0 to High(FCoverCache) do if FCoverCache[I].Key = Key then Exit(I);
+  Result := -1;
+end;
+
+procedure TScreenLibrarySearch.PollCovers;
+var Paths: TLibraryCoverPaths; I, J, N, Slot: integer; Key: UTF8String;
+  Surface: PSDL_Surface; Oldest: QWord; Pinned, PageChanged: boolean;
+begin
+  if FCoversDirty then begin
+    FCoversDirty := false; SetLength(Paths, LibraryGridPageSize); N := 0;
+    PageChanged := Length(FVisibleCovers) <> LibraryGridPageSize;
+    SetLength(FVisibleCovers, LibraryGridPageSize);
+    for I := 0 to LibraryGridPageSize - 1 do begin
+      Key := '';
+      if FTop + I < Length(FRows) then Key := FRows[FTop + I].CoverPath;
+      if FVisibleCovers[I] <> Key then PageChanged := true;
+      FVisibleCovers[I] := Key;
+      if (Key <> '') and (CoverIndex(Key) < 0) then begin
+        J := 0;
+        while (J < N) and (Paths[J] <> Key) do Inc(J);
+        if J = N then begin Paths[N] := Key; Inc(N); end;
+      end;
+    end;
+    if PageChanged then begin SetLength(Paths, N); FCoverLoader.SetPage(Paths); end;
   end;
+  // At most one small, decoded image is uploaded per frame. No disk IO here.
+  if not FCoverLoader.TryTake(Key, Surface) then Exit;
+  try
+    if CoverIndex(Key) >= 0 then Exit;
+    Slot := Length(FCoverCache);
+    if Slot < 64 then SetLength(FCoverCache, Slot + 1)
+    else begin
+      Slot := -1; Oldest := High(QWord);
+      for I := 0 to High(FCoverCache) do begin
+        Pinned := false;
+        for J := 0 to High(FVisibleCovers) do if FVisibleCovers[J] = FCoverCache[I].Key then begin Pinned := true; Break; end;
+        if not Pinned and (FCoverCache[I].Used < Oldest) then begin Oldest := FCoverCache[I].Used; Slot := I; end;
+      end;
+      if Slot < 0 then Exit;
+      if FCoverCache[Slot].Texture.TexNum <> 0 then UTexture.Texture.UnLoadTexture(FCoverCache[Slot].Texture);
+    end;
+    FCoverCache[Slot].Key := Key; FCoverCache[Slot].Used := GetTickCount64;
+    if Assigned(Surface) then begin
+      FCoverCache[Slot].Texture := UTexture.Texture.CreateTexture(PChar(Surface^.pixels), PATH_NONE, 256, 256, 24);
+      FCoverCache[Slot].Texture.W := 256; FCoverCache[Slot].Texture.H := 256;
+    end;
+  finally if Assigned(Surface) then SDL_FreeSurface(Surface); end;
 end;
 
 procedure LibraryBox(X, Y, W, H, R, G, B, A: single);
@@ -510,37 +657,24 @@ begin
 end;
 
 procedure TScreenLibrarySearch.DrawGrid;
-var I, J, Index, Tint: integer; Cover: TTexture; Key: UTF8String;
-  R: TLibraryTileRect; Crop, Aspect: single;
+var I, J, Index, Tint, Cached: integer; Cover: TTexture;
+  R: TLibraryTileRect; Crop: single;
 begin
-  for I := 0 to High(FCovers) do begin
-    Index := FTop + I;
-    if Index >= Length(FRows) then Continue;
+  for I := 0 to LibraryGridPageSize - 1 do begin
+    Index := FTop + I; if Index >= Length(FRows) then Continue;
     R := LibraryTileRect(I);
     if (FFocus = 1) and (Index = FSelected) then
       LibraryBox(R.X - 2, R.Y - 2, R.W + 4, R.H + 4, 1, 0.79, 0.36, 1);
-    Key := '';
-    if (FRows[Index].LocalIndex >= 0) and CatSongs.Song[FRows[Index].LocalIndex].Cover.IsSet then
-      Key := CatSongs.Song[FRows[Index].LocalIndex].Path.Append(CatSongs.Song[FRows[Index].LocalIndex].Cover).ToUTF8;
-    if Key <> FCoverKeys[I] then begin
-      if FCovers[I].TexNum <> 0 then UTexture.Texture.UnLoadTexture(FCovers[I]);
-      FCoverKeys[I] := Key;
-      if (Key <> '') and CatSongs.Song[FRows[Index].LocalIndex].Path.Append(CatSongs.Song[FRows[Index].LocalIndex].Cover).IsFile then
-        FCovers[I] := UTexture.Texture.LoadTexture(CatSongs.Song[FRows[Index].LocalIndex].Path.Append(CatSongs.Song[FRows[Index].LocalIndex].Cover));
-    end;
-    if FCovers[I].TexNum <> 0 then begin
-      Cover := FCovers[I];
-      // Crop the center to fill each card without stretching portrait or landscape art.
-      Aspect := Cover.W / Max(1, Cover.H);
-      if Aspect > R.W / R.H then begin
-        Crop := (1 - (R.W / R.H) / Aspect) / 2;
-        Cover.TexX1 := Crop; Cover.TexX2 := 1 - Crop;
-      end else begin
-        Crop := (1 - Aspect / (R.W / R.H)) / 2;
-        Cover.TexY1 := Crop; Cover.TexY2 := 1 - Crop;
-      end;
-      Cover.X := R.X; Cover.Y := R.Y; Cover.W := R.W; Cover.H := R.H;
-      DrawTexture(Cover);
+    Cached := CoverIndex(FRows[Index].CoverPath);
+    if (Cached >= 0) and (FCoverCache[Cached].Texture.TexNum <> 0) then begin
+      FCoverCache[Cached].Used := GetTickCount64; Cover := FCoverCache[Cached].Texture;
+      Crop := (1 - R.H / R.W) / 2; Cover.TexY1 := Crop; Cover.TexY2 := 1 - Crop;
+      // Same cover button renderer and selected brightness as the regular song grid.
+      FGridButtons[I].Texture := Cover;
+      FGridButtons[I].X := R.X; FGridButtons[I].Y := R.Y;
+      FGridButtons[I].W := R.W; FGridButtons[I].H := R.H;
+      FGridButtons[I].Selected := (FFocus <> 1) or (Index = FSelected);
+      FGridButtons[I].Draw;
     end else begin
       Tint := 0;
       for J := 1 to Length(FRows[Index].Artist) do Tint := (Tint + Ord(FRows[Index].Artist[J])) mod 128;
@@ -555,12 +689,26 @@ begin
 end;
 
 function TScreenLibrarySearch.Draw: boolean;
+var Caption: UTF8String;
 begin
-  Tick;
-  if FLeaving then begin DrawBG; DrawFG; Exit(true); end;
-  UpdateView;
-  DrawBG;
-  LibraryBox(24, 51, 752, 37, 0.09, 0.12, 0.19, 1);
+  // Display draws each viewport separately; run work/upload budgets once.
+  if ScreenAct = 1 then Tick;
+  if FLeaving then begin ScreenSong.DrawBG; DrawFG; Exit(true); end;
+  if FViewDirty then begin UpdateView; FViewDirty := false; end;
+  if (FFocus = 1) and (FDetailsID = 0) and not FSignIn and
+     (FSelected >= 0) and (FSelected < Length(FRows)) and Assigned(FSession) and
+     not FSession.Busy and (FSession.ErrorCode = '') then begin
+    Caption := FRows[FSelected].Artist + ' - ' + FRows[FSelected].Title;
+    if FRows[FSelected].RemoteIndex >= 0 then Caption := Caption + ' / Download & sing';
+    if Caption <> FSelectionCaption then begin
+      Text[FStatusText].Text := FitLibraryText(Caption, 14, 752);
+      FSelectionCaption := Caption;
+    end;
+  end;
+  ScreenSong.DrawBG;
+  LibraryBox(0, 0, 800, 112, 0.07, 0.015, 0.065, 1);
+  LibraryBox(0, 524, 800, 76, 0.025, 0.015, 0.055, 0.88);
+  LibraryBox(24, 51, 752, 37, 0.16, 0.055, 0.17, 1);
   if FFocus = 0 then LibraryBox(24, 86, 752, 2, 0.65, 0.71, 1, 1);
   LibraryBox(24, 555, 752, 1, 0.18, 0.23, 0.32, 1);
   if FDetailsID = 0 then DrawGrid
@@ -573,9 +721,14 @@ begin
 end;
 
 function TScreenLibrarySearch.ParseInput(Key: cardinal; CharCode: UCS4Char; Down: boolean): boolean;
-var S: UTF8String; Step, Next: integer;
+var S: UTF8String; Step, Next, PreviousTop, PreviousFocus: integer;
 begin
-  Result := true; if not Down then Exit;
+  Result := true;
+  if not Down then Exit;
+  // Printable key-down events are followed by SDL_TEXTINPUT. Only committed
+  // text edits a field; do not invalidate/reformat the view for the key-down.
+  if (CharCode = 0) and (Key >= 32) and (Key < 127) and
+     not ((Key = SDLK_d) and (FDetailsID > 0)) then Exit;
   if Key = SDLK_F2 then begin
     FSignIn := not FSignIn;
     if FSignIn then FFocus := 2 else begin FFocus := 0; FLoginQueued := false; ClearPassword; end;
@@ -601,6 +754,7 @@ begin
       if Assigned(FSession) then
         FSource := EnsureRange(FSource + Step, 0, Max(0, FSession.DetailLinks.Count - 1));
     end else begin
+      PreviousTop := FTop; PreviousFocus := FFocus;
       case Key of
         SDLK_LEFT: Step := -1; SDLK_RIGHT: Step := 1;
         SDLK_UP: Step := -LibraryGridColumns; SDLK_DOWN: Step := LibraryGridColumns;
@@ -610,12 +764,9 @@ begin
       else Next := LibraryGridMove(FSelected, Step, Length(FRows));
       FFocus := 1;
       FSelected := EnsureRange(Next, 0, Max(0, Length(FRows) - 1));
-      while (FSelected < Length(FRows)) and (FRows[FSelected].Caption = '') do begin
-        Next := FSelected + IfThen(Step < 0, -1, 1);
-        if (Next < 0) or (Next >= Length(FRows)) then Break;
-        FSelected := Next;
-      end;
       FTop := (FSelected div LibraryGridPageSize) * LibraryGridPageSize;
+      if FTop <> PreviousTop then FCoversDirty := true;
+      if (FTop = PreviousTop) and (PreviousFocus = 1) then Exit;
     end;
   end else if Key = SDLK_RETURN then begin
     if FSignIn then QueueLogin else Activate;
@@ -627,8 +778,7 @@ begin
       4: ; // The sign-in button is not an editable field.
     else DeleteLastCatalogCharacter(FQuery); FFocus := 0; Changed;
     end;
-  end else if (FDetailsID = 0) and IsPrintableCatalogCharacter(CharCode) and
-              ((SDL_GetModState and (KMOD_CTRL or KMOD_ALT or KMOD_GUI)) = 0) then begin
+  end else if (FDetailsID = 0) and IsPrintableCatalogCharacter(CharCode) then begin
     S := UCS4ToUTF8String(CharCode);
     case FFocus of
       2: if Length(FUser) + Length(S) <= 200 then FUser := FUser + S;
@@ -638,13 +788,25 @@ begin
       if Length(FQuery) + Length(S) <= 200 then begin FQuery := FQuery + S; FFocus := 0; Changed; end;
     end;
   end;
-  UpdateView;
+  FViewDirty := true;
 end;
 
 function TScreenLibrarySearch.ParseMouse(MouseButton: integer; Down: boolean; X, Y: integer): boolean;
 var Index: integer;
 begin
-  Result := true; if not Down then Exit;
+  Result := true;
+  TransferMouseCords(X, Y);
+  if (MouseButton = 0) and ((X <> FMouseX) or (Y <> FMouseY)) then begin
+    FMouseX := X; FMouseY := Y;
+    if (FDetailsID = 0) and not FSignIn then begin
+      Index := LibraryTileAt(X, Y);
+      if (Index >= 0) and (FTop + Index < Length(FRows)) then begin
+        if FFocus <> 1 then FViewDirty := true;
+        FFocus := 1; FSelected := FTop + Index;
+      end;
+    end;
+  end;
+  if not Down then Exit;
   if MouseButton = SDL_BUTTON_RIGHT then begin ParseInput(SDLK_ESCAPE, 0, true); Exit; end;
   if (X < 24) or (X > 776) then Exit;
   if MouseButton = SDL_BUTTON_WHEELDOWN then begin ParseInput(SDLK_PAGEDOWN, 0, true); Exit; end;
@@ -663,10 +825,10 @@ begin
     FSource := (FSource div 8) * 8 + Index; Activate;
   end else if FDetailsID = 0 then begin
     Index := LibraryTileAt(X, Y);
-    if Index >= 0 then begin
+    if (Index >= 0) and (FTop + Index < Length(FRows)) then begin
       FFocus := 1; FSelected := FTop + Index; Activate;
     end;
   end;
-  UpdateView;
+  FViewDirty := true;
 end;
 end.

@@ -10,6 +10,8 @@ followed by new matches from [USDB](https://usdb.animux.de). The compact 5 × 3
 grid uses full-card cover art with a dark text gradient. Click a USDB card or
 press **Enter** to download; unavailable sources are retried automatically.
 Verified downloads start singing automatically and remain in your library.
+Local filtering and cover decoding run in background workers. The grid shares
+UltraStar's regular cover-button renderer, theme background and mouse scaling.
 
 - **Arrows / mouse wheel:** browse; Up from the first row wraps to the end.
 - **Tab:** switch search/cards. **F2:** USDB account. **Esc:** back/cancel.

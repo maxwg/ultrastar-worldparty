@@ -324,6 +324,7 @@ begin
       Report := Report + BackTraceStrFunc(ExceptAddr);
       for I := 0 to ExceptFrameCount - 1 do
         Report := Report + LineEnding + BackTraceStrFunc(ExceptFrames[I]);
+      {$IFDEF LIBRARY_E2E} LibraryE2EFail(Report); {$ENDIF}
       ShowMessage(Report);
 
       Halt;

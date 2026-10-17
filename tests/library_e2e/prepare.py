@@ -14,6 +14,7 @@ parser.add_argument('--repo', type=Path, required=True)
 parser.add_argument('--runtime', type=Path, required=True)
 parser.add_argument('--ffmpeg', required=True)
 parser.add_argument('--no-fade', action='store_true')
+parser.add_argument('--wide-window', action='store_true')
 args = parser.parse_args()
 runtime = args.runtime.resolve()
 for dll in (args.repo / 'game').glob('*.dll'):
@@ -29,6 +30,8 @@ settings.optionxform = str
 settings['Game'] = dict(Players='1', Language='English', Tabs='Off', Sorting='Artist', SongMenu='Chessboard')
 settings['Graphics'] = dict(FullScreen='Off', Resolution='800x600', Screens='1', Split='Off', MaxFramerate='60')
 settings['Graphics']['ScreenFade'] = 'Off' if args.no_fade else 'On'
+if args.wide_window:
+    settings['Graphics']['Resolution'] = '1280x720'
 settings['Catalog'] = dict(Python=sys.executable, Adapter=str(runtime/'fixture_adapter.py'), Credentials=str(runtime/'fixture-credentials.json'))
 settings['Directories'] = dict(SongDir1=str(runtime/'songs'))
 settings['Record'] = {'DeviceName[1]':'System audio capture device','Input[1]':'0','Channel1[1]':'1','Channel2[1]':'0','Latency[1]':'0'}
@@ -67,3 +70,5 @@ for index, title in enumerate(('Local Fixture', 'Fixture Sunrise', 'Fixture Nigh
     palette = (((130,40,100),(20,50,110)), ((240,170,80),(150,55,70)), ((30,160,180),(25,40,110)), ((230,200,150),(80,70,100)), ((90,150,220),(50,35,100)), ((60,170,130),(20,70,100)))[index]
     cover_png(folder/'cover.png', width, height, palette)
     (folder/'song.txt').write_text(chart.replace('Remote Fixture',title).replace('#ARTIST:E2E', '#COVER:cover.png\n#ARTIST:E2E'), encoding='utf-8')
+shutil.copy2(runtime/'songs/LocalFixture/cover.png', runtime/'songs/LocalFixtureDuplicate/cover.png')
+shutil.copy2(runtime/'songs/LocalFixture/song.txt', runtime/'songs/LocalFixtureDuplicate/song.txt')

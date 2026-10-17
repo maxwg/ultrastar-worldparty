@@ -4,7 +4,8 @@ param(
   [string]$PythonPath = (Get-Command python -ErrorAction Stop).Source,
   [string]$FfmpegPath = (Get-Command ffmpeg -ErrorAction Stop).Source,
   [switch]$NoFade,
-  [switch]$CancelDownload
+  [switch]$CancelDownload,
+  [switch]$WideWindow
 )
 $ErrorActionPreference='Stop'
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
@@ -17,6 +18,7 @@ foreach($name in @('avatars','covers','fonts','languages','licenses','plugins','
 }
 $prepareArguments=@((Join-Path $PSScriptRoot 'prepare.py'),'--repo',$repo,'--runtime',$runtime,'--ffmpeg',$FfmpegPath)
 if($NoFade){$prepareArguments+='--no-fade'}
+if($WideWindow){$prepareArguments+='--wide-window'}
 & $PythonPath @prepareArguments
 if($LASTEXITCODE -ne 0){throw 'Fixture preparation failed'}
 $compiler = Join-Path $CompilerRoot 'installed\bin\i386-win32\fpc.exe'
@@ -30,6 +32,17 @@ Push-Location (Join-Path $repo 'src')
 try { & $compiler @flags *> (Join-Path $root 'compile.log'); $code=$LASTEXITCODE }
 finally { Pop-Location }
 if($code -ne 0){Get-Content (Join-Path $root 'compile.log') -Tail 20;throw 'Test game compilation failed'}
+$testFlags=@('-n','-Si','-Sg','-Sc',('-Fu'+$units),
+  ('-Fu'+(Join-Path $CompilerRoot 'installed\units\i386-win32\*')),
+  ('-Fu'+(Join-Path $repo 'src\base')),
+  ('-FD'+(Join-Path $CompilerRoot 'b\install\binw32')),
+  ('-FE'+$root),('-FU'+$units),'-O2')
+foreach($test in @('library_search_index_test','text_input_events_test')) {
+  & $compiler @testFlags (Join-Path $repo ('tests\'+$test+'.pas')) *> (Join-Path $root ($test+'-compile.log'))
+  if($LASTEXITCODE -ne 0){Get-Content (Join-Path $root ($test+'-compile.log'));throw 'Search regression compilation failed'}
+  & (Join-Path $root ($test+'.exe')) | Tee-Object -FilePath (Join-Path $root ($test+'-result.txt'))
+  if($LASTEXITCODE -ne 0){throw 'Search regression failed'}
+}
 $runArguments=@((Join-Path $PSScriptRoot 'run.py'),'--runtime',$runtime)
 if($CancelDownload){$runArguments+='--cancel-download'}
 & $PythonPath @runArguments

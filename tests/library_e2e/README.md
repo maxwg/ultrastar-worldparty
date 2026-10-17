@@ -7,6 +7,7 @@ Pascal toolchain, Python, and FFmpeg:
 tests\library_e2e\run.ps1 -CompilerRoot <existing-local-toolchain-root>
 tests\library_e2e\run.ps1 -CompilerRoot <existing-local-toolchain-root> -NoFade
 tests\library_e2e\run.ps1 -CompilerRoot <existing-local-toolchain-root> -NoFade -CancelDownload
+tests\library_e2e\run.ps1 -CompilerRoot <existing-local-toolchain-root> -WideWindow
 ```
 
 The runner creates a fresh ignored `work/library-e2e-*` runtime. It builds a
@@ -16,6 +17,7 @@ assets are referenced by directory junctions. Config, songs, databases, logs,
 and screenshots belong to the fresh runtime. No real credentials are read.
 
 The actual Windows SDL/OpenGL game and its production input, catalog bridge,
+background search index, async thumbnail loader and normal cover-button renderer,
 grid, rescanning, and singing-screen code are exercised. A local adapter
 fixture supplies six unique local songs, duplicate local/remote charts and
 fourteen unique remote results. Original portrait, square and landscape covers
@@ -34,6 +36,13 @@ The cancellation variant holds a real helper download active until Escape kills
 the owned process and restores signed-in search, without publishing a song.
 Adapter operation counts and the game error log are checked after the process
 exits. The outer Windows Job supervises the game and its helper descendants.
+
+The runner also executes a 20,003-chart index stress test and exact Unicode
+decoder checks. Mixed native key/text bursts include doubled letters and AltGr.
+Cover decoding deliberately pauses for 50 ms in this test build; typing must
+remain exact. Cached page returns require zero new decodes, idle frames must
+not remeasure labels, and a physical-coordinate mouse click tests viewport
+scaling. E2E window titles are unique so tests can coexist with a running game.
 
 Each successful playback runtime retains `e2e-first-launch.txt`, `e2e-result.txt`
 (the restart receipt), `adapter-trace.txt`, `Error.log`, and four

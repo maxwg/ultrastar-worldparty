@@ -158,6 +158,7 @@ type
       function InteractAt(X, Y: real): integer;
       function CollectionAt(X, Y: real): integer;
       function AcceptsTransitionInput: boolean; virtual;
+      function AcceptsRepeatedKey(Key: cardinal): boolean; virtual;
       procedure OnShow; virtual;
       procedure OnShowFinish; virtual;
       procedure OnHide; virtual;
@@ -1737,6 +1738,9 @@ begin
   // nothing
   Result := true;
 end;
+
+function TMenu.AcceptsRepeatedKey(Key: cardinal): boolean;
+begin Result := true; end;
 
 function TMenu.ParseInput(PressedKey: Cardinal; CharCode: UCS4Char; PressedDown: boolean): boolean;
 begin

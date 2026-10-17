@@ -401,9 +401,12 @@ begin
   begin // Key Down
     SDL_ModState := SDL_GetModState and (KMOD_LSHIFT or KMOD_RSHIFT or KMOD_LCTRL or KMOD_RCTRL
       or KMOD_LALT or KMOD_RALT or KMOD_GUI or KMOD_MODE);
-    if (Self.Mode = smNormal) and Self.FreeListMode() and IsSearchTextCharacter(CharCode,
-      (SDL_ModState and (KMOD_CTRL or KMOD_ALT or KMOD_GUI)) <> 0,
-      (SDL_ModState and KMOD_MODE) <> 0) then
+    // SDL_TEXTINPUT is already committed layout/IME text, including AltGr.
+    // Printable key-downs must not run a song shortcut before that text arrives.
+    if (Self.Mode = smNormal) and Self.FreeListMode() and (CharCode = 0) and
+       (PressedKey >= 32) and (PressedKey < 127) and
+       ((SDL_ModState and (KMOD_CTRL or KMOD_ALT or KMOD_GUI)) = 0) then Exit;
+    if (Self.Mode = smNormal) and Self.FreeListMode() and IsSearchTextCharacter(CharCode, false, false) then
     begin
       OpenLibrarySearch(UCS4ToUTF8String(CharCode));
       Exit;

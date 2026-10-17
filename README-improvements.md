@@ -14,6 +14,11 @@
 - Matches without cover art use a colored music tile.
 - No blank section padding. Local/USDB badges and a gold selection outline.
 - Complete Unicode text input, including during the opening animation.
+- Latest-query background filtering; stale work is discarded instead of queued.
+- Async cover decoding, a 64-cover cache, and one small GPU upload per frame.
+- Idle frames and selection changes reuse measured labels and cached covers.
+- Committed text handles AltGr; held toggles don't fire repeatedly.
+- Regular UltraStar background, cover buttons, mouse scaling and hover selection.
 - Up wraps to the final USDB result; paging and mouse targets match the grid.
 - Automatic saved-account sign-in; repeated submits/downloads are coalesced.
 - Five-minute in-memory search/details caches, limited to 64 entries each.

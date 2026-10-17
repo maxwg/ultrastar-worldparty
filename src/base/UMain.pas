@@ -110,6 +110,10 @@ begin
   try
   {$ENDIF}
     WindowTitle := USWPVersionStr;
+    {$IFDEF LIBRARY_E2E}
+    // The isolated harness must coexist with the user's running game.
+    WindowTitle := WindowTitle + ' E2E ' + IntToStr(GetTickCount64);
+    {$ENDIF}
 
     Platform.Init;
 
@@ -486,6 +490,13 @@ begin
       end;
       SDL_KEYDOWN, SDL_TEXTINPUT:
         begin
+          // Repeat applies to navigation/editing, not toggles or submit actions.
+          if (Event.type_ = SDL_KEYDOWN) and (Event.key._repeat <> 0) then begin
+            if Assigned(Display.NextScreen) then begin
+              if not Display.NextScreen^.AcceptsRepeatedKey(Event.key.keysym.sym) then Continue;
+            end else if Assigned(Display.CurrentScreen) and
+              not Display.CurrentScreen^.AcceptsRepeatedKey(Event.key.keysym.sym) then Continue;
+          end;
           // translate CTRL-A (ASCII 1) - CTRL-Z (ASCII 26) to correct charcodes.
           // keysyms (SDLK_A, ...) could be used instead but they ignore the
           // current key mapping (if 'a' is pressed on a French keyboard the

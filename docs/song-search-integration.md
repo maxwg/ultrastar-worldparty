@@ -253,3 +253,33 @@ harness covers six unique local charts, local/remote duplicates, fourteen new
 remote matches, long accented captions, both fade modes, and persistence after
 a fresh launch. A separate cancellation run leaves no installed chart and
 restores searchable results. Live USDB login/search/details/cache checks pass.
+
+## Asynchronous search and input audit (2026-10-17)
+
+Local search now runs against an immutable metadata snapshot on a worker thread.
+Artist/title normalization and duplicate detection happen once per snapshot.
+Each input batch submits only its latest query; revision checks discard obsolete
+work and responses. Network requests continue through the asynchronous catalog
+helper with its existing cache. Text handlers do not scan the library or format
+all cards. Idle frames and selection moves within a page reuse measured labels.
+
+A separate, lower-priority worker decodes and scales cover files. The UI uploads
+at most one 256-pixel thumbnail per frame, retains at most 64 textures, caches
+missing covers and pins visible covers during eviction. Page changes invalidate
+old decode jobs; returning to a cached page performs no new image decoding.
+OpenGL remains on the render thread.
+
+Committed SDL text is the only source of printable search edits. Modifier state
+no longer rejects AltGr text. Key-repeat filtering applies to account/focus/submit
+toggles, while Backspace, navigation and legitimate doubled letters remain valid.
+The first typing event opens search without also invoking a song shortcut.
+The grid shares the normal song-screen background, TButton cover renderer and
+mouse-coordinate conversion, with hover selection and the existing compact cards.
+
+The native 20,003-chart stress fixture reproduced roughly 215 ms for one former
+foreground rebuild; 1,000 latest-query submissions took roughly 0.7 ms total.
+Those measure different work: filtering now happens in the background, and the
+SDL test separately asserts one filter submission per burst. The E2E suite also
+passes text during simulated slow cover IO, cached page restoration, idle label
+reuse, wide-window mouse selection, source fallback, autoplay and restart
+persistence. Unique test window titles avoid the normal single-instance prompt.

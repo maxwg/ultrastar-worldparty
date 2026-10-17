@@ -6,9 +6,11 @@ procedure LibraryE2EFail(const MessageText: string);
 procedure LibraryE2ETrace(const MessageText: string);
 implementation
 uses SysUtils, Classes, sdl2, UGraphic, UDisplay, USongs, UScreenSong,
-  UScreenLibrarySearch, UMusic, UNote, USong;
+  UScreenLibrarySearch, UMusic, UNote, USong, UUnicodeUtils;
 var Phase: integer = 0; Started: QWord; Receipt: TextFile;
   LoginReleased, DownloadCaptured: boolean;
+  BurstSubmissions, CachedDecodes, IdleViewBuilds: integer;
+  ArtTypingChecked: boolean;
 procedure Note(const S: string);
 begin WriteLn(Receipt, S); Flush(Receipt); end;
 procedure LibraryE2ETrace(const MessageText: string);
@@ -26,9 +28,29 @@ begin
   FillChar(E, SizeOf(E), 0); E.type_ := SDL_TEXTINPUT;
   StrPLCopy(PChar(@E.text.text[0]), S, SizeOf(E.text.text)-1); SDL_PushEvent(@E);
 end;
-procedure Key(K: LongInt);
+procedure Key(K: LongInt; Repeated: boolean = false);
 var E: TSDL_Event;
-begin FillChar(E, SizeOf(E), 0); E.type_ := SDL_KEYDOWN; E.key.keysym.sym := K; SDL_PushEvent(@E); end;
+begin
+  FillChar(E, SizeOf(E), 0); E.type_ := SDL_KEYDOWN;
+  E.key.keysym.sym := K; E.key._repeat := Ord(Repeated); SDL_PushEvent(@E);
+end;
+procedure Typed(const S: UTF8String);
+var I: integer;
+begin
+  for I := 1 to Length(S) do begin
+    Key(Ord(S[I])); TextEvent(Copy(S, I, 1));
+  end;
+end;
+procedure ClickCard(X, Y: integer);
+var E: TSDL_Event;
+begin
+  FillChar(E, SizeOf(E), 0); E.type_ := SDL_MOUSEBUTTONDOWN;
+  E.button.button := SDL_BUTTON_LEFT; E.button.state := SDL_PRESSED;
+  E.button.x := Round(X * (ScreenW / Screens) / RenderW);
+  E.button.y := Round(Y * ScreenH / RenderH);
+  SDL_PushEvent(@E);
+  E.type_ := SDL_MOUSEBUTTONUP; E.button.state := SDL_RELEASED; SDL_PushEvent(@E);
+end;
 procedure Advance;
 begin Inc(Phase); Note('phase '+IntToStr(Phase)); end;
 procedure LibraryE2ETick;
@@ -66,34 +88,72 @@ begin
       Display.CurrentScreen^.FadeTo(@ScreenSong); Advance;
     end;
     1: if (Display.CurrentScreen = @ScreenSong) and not Assigned(Display.NextScreen) then begin
-      TextEvent('xy'); TextEvent('z'); Advance;
+      Key(SDLK_x); TextEvent('xy'); Key(SDLK_z); TextEvent('z'); Advance;
     end;
     2: if LibrarySearchTestSnapshot(Query, Selected, Rows, Remote, Busy, SignedIn) and
           not Assigned(Display.NextScreen) then begin
       if Query <> 'xyz' then Fail('lost batched or transition text: '+string(Query));
       Note('PASS: complete batched SDL text and typing during search transition');
-      Key(SDLK_BACKSPACE); Key(SDLK_BACKSPACE); Key(SDLK_BACKSPACE); TextEvent('Fixture'); Advance;
+      BurstSubmissions := LibrarySearchTestSubmissions;
+      Key(SDLK_BACKSPACE); Key(SDLK_BACKSPACE); Key(SDLK_BACKSPACE);
+      SDL_SetModState(KMOD_RALT or KMOD_LCTRL);
+      Typed('mississippibookkeeper'); TextEvent(UCS4ToUTF8String($E9));
+      Phase := 10;
+    end;
+    10: if LibrarySearchTestSnapshot(Query, Selected, Rows, Remote, Busy, SignedIn) then begin
+      if Query <> 'mississippibookkeeper' + UCS4ToUTF8String($E9) then Fail('dropped/duplicate committed text or AltGr rejection');
+      if LibrarySearchTestSubmissions - BurstSubmissions <> 1 then Fail('typing burst did not coalesce into one filter');
+      Note('PASS: mixed key/text burst preserves repeated letters and AltGr; one background filter submission');
+      SDL_SetModState(KMOD_NONE);
+      for I := 1 to LengthUTF8(Query) do Key(SDLK_BACKSPACE);
+      TextEvent('Fixture'); Phase := 3;
       // Exercise the account button while automatic sign-in is active or complete.
       // Button typing must not edit the query, and repeated submit must not reauthenticate.
-      Key(SDLK_F2); Key(SDLK_TAB); Key(SDLK_TAB); TextEvent('ignored');
+      Key(SDLK_F2); Key(SDLK_F2, true); Key(SDLK_TAB); Key(SDLK_TAB, true); Key(SDLK_TAB); TextEvent('ignored');
       Key(SDLK_BACKSPACE); Key(SDLK_RETURN); Key(SDLK_RETURN); Key(SDLK_F2);
     end;
     3: if LibrarySearchTestSnapshot(Query, Selected, Rows, Remote, Busy, SignedIn) and
           SignedIn and not Busy and (Remote > 0) then begin
-      if Query <> 'Fixture' then Fail('query edit');
+      if not ArtTypingChecked and (LibrarySearchTestCoverDecodes > 0) then begin
+        Key(SDLK_BACKSPACE); Key(SDLK_BACKSPACE); Typed('re');
+        Phase := 13; Exit;
+      end;
+      if not LibrarySearchTestArtReady then Exit;
+      if Query <> 'Fixture' then Fail('query edit: '+string(Query));
       if (Rows <> 20) or (Remote <> 14) or not LibrarySearchTestLocalFirst then
         Fail('local-first layout or artist/title deduplication');
       if not LibrarySearchTestTextFits then Fail('card or query text overflows');
       Note('PASS: local-first grid and duplicate local/remote song suppression');
       Note('PASS: stored sign-in, account button input isolation and asynchronous search');
       Display.SaveScreenShot; ScreenPopupInfo.Visible := false;
-      Key(SDLK_UP); Advance;
+      CachedDecodes := LibrarySearchTestCoverDecodes;
+      IdleViewBuilds := LibrarySearchTestViewBuilds; Phase := 14;
+    end;
+    14: begin
+      if LibrarySearchTestViewBuilds <> IdleViewBuilds then Fail('idle frame reformatted the grid');
+      Note('PASS: idle frames do not rebuild or remeasure grid labels');
+      Key(SDLK_UP); Phase := 4;
+    end;
+    13: if LibrarySearchTestSnapshot(Query, Selected, Rows, Remote, Busy, SignedIn) then begin
+      if Query <> 'Fixture' then Fail('typing during slow cover decode lost/duplicated text');
+      ArtTypingChecked := true; Phase := 3;
+      Note('PASS: typing remains exact while the cover worker simulates slow IO');
     end;
     4: if LibrarySearchTestSnapshot(Query, Selected, Rows, Remote, Busy, SignedIn) then begin
       if Selected <> Rows - 1 then Fail(Format('Up did not wrap to last USDB card (selected=%d rows=%d)', [Selected, Rows]));
       Note('PASS: Up wraps directly to USDB on the last page');
       Display.SaveScreenShot; ScreenPopupInfo.Visible := false;
-      Key(SDLK_RETURN); Key(SDLK_RETURN); Advance;
+      Key(SDLK_PAGEUP); Phase := 11;
+    end;
+    11: if LibrarySearchTestSnapshot(Query, Selected, Rows, Remote, Busy, SignedIn) then begin
+      if (Selected <> 4) or not LibrarySearchTestArtReady then Fail('cached page did not restore immediately');
+      if LibrarySearchTestCoverDecodes <> CachedDecodes then Fail('cached page decoded art again');
+      Note('PASS: returning to a page reuses cached covers with zero new decodes');
+      Key(SDLK_UP); Phase := 12;
+    end;
+    12: if LibrarySearchTestSnapshot(Query, Selected, Rows, Remote, Busy, SignedIn) then begin
+      if Selected <> Rows - 1 then Fail('wrap after returning to cached page');
+      ClickCard(703, 181); Key(SDLK_RETURN); Key(SDLK_RETURN); Phase := 5;
     end;
     5: begin
       if (GetEnvironmentVariable('ULTRASTAR_E2E_CANCEL') = '1') and FileExists('download-active') then begin
