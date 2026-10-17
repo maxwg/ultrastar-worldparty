@@ -3,7 +3,7 @@
 ## Installed Windows collection search (2026-10-17)
 
 Typing, F3, or the search icon in normal song selection opens the combined
-collection search as a four-column, two-row cover grid. Local artist/title
+collection search as a compact four-column, three-row cover grid. Local artist/title
 matches appear first, followed by a separately aligned USDB section. Duplicate artist/title pairs are hidden using Unicode lowercasing,
 normalized whitespace and straight/curly apostrophe equivalence. Named versions
 such as `(Live)` remain distinct. No existing song files are deleted.
@@ -28,12 +28,14 @@ Jobs. Interrupted staging is outside the library and cannot appear playable.
 Configure `[Catalog]` / `Python` and `Adapter` with absolute paths in the game
 config, or use the existing command-line overrides. Optional `Credentials`
 references an existing JSON credential file without copying its values. F2 then
-Enter signs in using that file when the typed fields are blank. yt-dlp and ffprobe must be
+Enter retries using that file when the typed fields are blank. Opening search
+automatically attempts stored sign-in once the helper is ready. It waits while
+busy, preserves an existing session, and avoids repeated attempts after failure. yt-dlp and ffprobe must be
 available to the helper. No account is created automatically.
 
 Verification: full clean i386-win32 release compilation; 39 adapter tests (one
 existing POSIX-only skip), 375 bridge assertions, five identity assertions, and
-62 grid bounds/overlap/hit-target assertions. Saved credentials from the
+116 grid bounds/overlap/hit-target assertions and nine auto-sign-in state checks. Saved credentials from the
 installed UltraStar CLI successfully authenticated through the live adapter:
 Adele returned seven results and source details returned two verified media
 links. Credential values were not printed or copied. Actual media installation

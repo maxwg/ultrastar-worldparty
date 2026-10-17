@@ -1,7 +1,7 @@
 unit ULibraryGridLayout;
 {$mode objfpc}{$H+}
 interface
-const LibraryGridColumns = 4; LibraryGridPageSize = 8;
+const LibraryGridColumns = 4; LibraryGridPageSize = 12;
 type TLibraryTileRect = record X, Y, W, H: integer; end;
 function LibraryTileRect(Index: integer): TLibraryTileRect;
 function LibraryTileAt(X, Y: integer): integer;
@@ -9,8 +9,8 @@ implementation
 function LibraryTileRect(Index: integer): TLibraryTileRect;
 begin
   Result.X := 42 + (Index mod LibraryGridColumns) * 184;
-  Result.Y := 216 + (Index div LibraryGridColumns) * 146;
-  Result.W := 174; Result.H := 126;
+  Result.Y := 154 + (Index div LibraryGridColumns) * 112;
+  Result.W := 174; Result.H := 104;
 end;
 function LibraryTileAt(X, Y: integer): integer;
 var I: integer; R: TLibraryTileRect;

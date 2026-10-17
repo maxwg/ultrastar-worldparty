@@ -15,9 +15,9 @@ type
     FQuery, FLastQuery, FUser, FPassword: UTF8String;
     FLastInstalled: string;
     FQueryText, FAccountText, FPasswordText, FLoginText, FStatusText, FHintText, FCountText, FPageText: integer;
-    FRowTexts, FArtistTexts, FBadgeTexts: array[0..7] of integer;
-    FCovers: array[0..7] of TTexture;
-    FCoverKeys: array[0..7] of UTF8String;
+    FRowTexts, FArtistTexts, FBadgeTexts: array[0..11] of integer;
+    FCovers: array[0..11] of TTexture;
+    FCoverKeys: array[0..11] of UTF8String;
     FDefaultCover: TTexture;
     FSectionText: integer;
     procedure DrawGrid;
@@ -26,7 +26,7 @@ type
     FFocus, FTop, FSelected, FRemoteCount, FSource: integer;
     FDetailsID: Int64;
     FSearchDue: QWord;
-    FSignIn, FRescan, FLoginQueued: boolean;
+    FSignIn, FRescan, FLoginQueued, FAutoLoginAttempted: boolean;
     procedure Changed;
     procedure BuildRows;
     procedure UpdateView;
@@ -49,7 +49,7 @@ procedure FreeLibrarySearch;
 implementation
 uses SysUtils, Math, IniFiles, UCommon, dglOpenGL, UDrawTexture, UThemes, UGraphic, UPlatform, UCommandLine,
   UUnicodeUtils, USongIdentity, USong, USongs, UScreenSong, UScreenMain,
-  USongCatalogInput, USongCatalogLayout, ULibraryGridLayout;
+  USongCatalogInput, USongCatalogLayout, ULibraryGridLayout, UCatalogAutoSignIn;
 var LibrarySearch: TScreenLibrarySearch;
 
 procedure OpenLibrarySearch(const Query: UTF8String);
@@ -70,15 +70,15 @@ begin
   inherited Create;
   BG := DEFAULT_BACKGROUND; BG.Color.R := 0.025; BG.Color.G := 0.035; BG.Color.B := 0.07;
   AddBackground(BG);
-  AddText(42, 28, 0, 34, 1, 1, 1, 'Search your collection + USDB');
-  AddText(680, 35, 0, 18, 0.75, 0.85, 1, '[Back]');
-  AddText(680, 92, 0, 18, 0.75, 0.85, 1, '[Clear]');
-  FPageText := AddText(650, 188, 0, 14, 0.7, 0.8, 0.9, '');
-  FQueryText := AddText(42, 88, 0, 25, 1, 1, 1, '');
-  FAccountText := AddText(42, 132, 0, 17, 0.7, 0.85, 1, '');
-  FPasswordText := AddText(325, 132, 0, 17, 1, 1, 1, '');
-  FLoginText := AddText(650, 132, 0, 17, 1, 0.85, 0.5, '');
-  FCountText := AddText(42, 184, 0, 19, 0.7, 0.85, 1, '');
+  AddText(42, 20, 0, 26, 1, 1, 1, 'Song search');
+  AddText(680, 24, 0, 18, 0.75, 0.85, 1, '[Back]');
+  AddText(680, 65, 0, 18, 0.75, 0.85, 1, '[Clear]');
+  FPageText := AddText(650, 131, 0, 14, 0.7, 0.8, 0.9, '');
+  FQueryText := AddText(42, 62, 0, 22, 1, 1, 1, '');
+  FAccountText := AddText(42, 101, 0, 14, 0.7, 0.85, 1, '');
+  FPasswordText := AddText(325, 101, 0, 14, 1, 1, 1, '');
+  FLoginText := AddText(650, 101, 0, 14, 1, 0.85, 0.5, '');
+  FCountText := AddText(42, 129, 0, 15, 0.7, 0.85, 1, '');
   for I := 0 to High(FRowTexts) do
     FRowTexts[I] := AddText(52, 220 + I * 27, 0, 19, 1, 1, 1, '');
   for I := 0 to High(FRowTexts) do begin
@@ -88,7 +88,7 @@ begin
   FDefaultCover := UTexture.Texture.LoadTexture('SongCover');
   FSectionText := AddText(42, 345, 0, 13, 0.8, 0.7, 1, 'USDB MATCHES');
   FStatusText := AddText(42, 506, 0, 16, 0.75, 0.85, 1, '');
-  FHintText := AddText(42, 548, 0, 16, 0.85, 0.85, 0.9, '');
+  FHintText := AddText(42, 540, 0, 14, 0.85, 0.85, 0.9, '');
 end;
 
 destructor TScreenLibrarySearch.Destroy;
@@ -129,6 +129,7 @@ begin
     Text[FStatusText].Text := 'USDB setup missing: configure Python and the song catalog adapter.';
     Exit;
   end;
+  FAutoLoginAttempted := false;
   Transport := TCatalogProcessTransport.Create;
   Transport.EnableDownloads := true;
   FSession := TCatalogSession.Create(Transport, true);
@@ -192,7 +193,7 @@ begin
   finally Seen.Free; end;
   Text[FCountText].Text := Format('YOUR COLLECTION: %d songs     /     USDB: %d new', [LocalCount, RemoteCount]);
   if FSelected >= Length(FRows) then FSelected := Max(0, Length(FRows) - 1);
-  FTop := Min(FTop, Max(0, ((Max(0, Length(FRows) - 1)) div 8) * 8));
+  FTop := Min(FTop, Max(0, ((Max(0, Length(FRows) - 1)) div LibraryGridPageSize) * LibraryGridPageSize));
 end;
 
 procedure TScreenLibrarySearch.Tick;
@@ -207,6 +208,9 @@ begin
   if FSession.Authenticated and not FSession.Busy and FSignIn then begin
     FSignIn := false; FFocus := 0;
   end;
+  if ClaimCatalogAutoSignIn(FAutoLoginAttempted, FSession.Busy,
+    FSession.Authenticated, FSession.StoredCredentials <> '',
+    FSession.ErrorCode <> '', FSignIn) then FSession.LoginStored;
   if FLoginQueued and not FSession.Busy then begin
     FLoginQueued := false;
     if (FUser = '') and (FPassword = '') and (FSession.StoredCredentials <> '') then
@@ -242,9 +246,11 @@ begin
     Prefix := ''; if FFocus = 4 then Prefix := '> ';
     Text[FLoginText].Text := Prefix + '[Sign in]';
   end else if Assigned(FSession) and FSession.Authenticated then
-    Text[FAccountText].Text := 'USDB signed in  |  Local files stay first. Existing songs are hidden from USDB.'
-  else Text[FAccountText].Text := 'USDB sign-in needed  |  Click here or press F2 to sign in.';
-  Text[FPageText].Text := Format('Page %d / %d', [FTop div 8 + 1, Max(1, (Length(FRows) + 7) div 8)]);
+    Text[FAccountText].Text := 'USDB connected  /  Local songs first'
+  else if Assigned(FSession) and FSession.Busy and (FSession.StoredCredentials <> '') then
+    Text[FAccountText].Text := 'Connecting to USDB...'
+  else Text[FAccountText].Text := 'USDB offline  /  F2: account';
+  Text[FPageText].Text := Format('Page %d / %d', [FTop div LibraryGridPageSize + 1, Max(1, (Length(FRows) + LibraryGridPageSize - 1) div LibraryGridPageSize)]);
   Text[FSectionText].Visible := false;
   for I := 0 to High(FRowTexts) do begin
     Text[FArtistTexts[I]].Visible := FDetailsID = 0;
@@ -254,6 +260,7 @@ begin
     Text[FPageText].Text := '';
     Text[FCountText].Text := 'USDB SOURCES - select a source, then Download (D)';
     for I := 0 to High(FRowTexts) do begin
+      Text[FRowTexts[I]].Visible := I < 8;
       Caption := '';
       Index := (FSource div 8) * 8 + I;
       if Index < FSession.DetailLinks.Count then begin
@@ -269,14 +276,15 @@ begin
   end else begin
     for I := 0 to High(FRowTexts) do begin
       Index := FTop + I;
+      Text[FRowTexts[I]].Visible := true;
       Text[FRowTexts[I]].X := 129 + (I mod 4) * 184;
-      Text[FRowTexts[I]].Y := 310 + (I div 4) * 146;
+      Text[FRowTexts[I]].Y := 218 + (I div 4) * 112;
       Text[FRowTexts[I]].Align := 1; Text[FRowTexts[I]].Size := 15;
       Text[FArtistTexts[I]].X := Text[FRowTexts[I]].X;
-      Text[FArtistTexts[I]].Y := Text[FRowTexts[I]].Y + 19;
+      Text[FArtistTexts[I]].Y := Text[FRowTexts[I]].Y + 18;
       Text[FArtistTexts[I]].Align := 1;
       Text[FBadgeTexts[I]].X := 50 + (I mod 4) * 184;
-      Text[FBadgeTexts[I]].Y := 223 + (I div 4) * 146;
+      Text[FBadgeTexts[I]].Y := 160 + (I div 4) * 112;
       Text[FRowTexts[I]].Text := ''; Text[FArtistTexts[I]].Text := ''; Text[FBadgeTexts[I]].Text := '';
       if Index < Length(FRows) then begin
         Text[FRowTexts[I]].Text := TruncateCatalogLine(FRows[Index].Title, 22);
@@ -284,11 +292,6 @@ begin
         if FRows[Index].LocalIndex >= 0 then Text[FBadgeTexts[I]].Text := 'LOCAL'
         else if FRows[Index].RemoteIndex >= 0 then begin
           Text[FBadgeTexts[I]].Text := 'USDB';
-          if (Index = FTop) or ((Index mod 4 = 0) and
-             ((Index = 0) or (FRows[Index - 1].RemoteIndex < 0))) then begin
-            Text[FSectionText].Y := 201 + (I div 4) * 146;
-            Text[FSectionText].Visible := true;
-          end;
         end;
       end;
     end;
@@ -375,9 +378,9 @@ begin
     Index := FTop + I;
     if (Index >= Length(FRows)) or (FRows[Index].Caption = '') then Continue;
     R := LibraryTileRect(I); X := R.X; Y := R.Y;
-    if (FFocus = 1) and (Index = FSelected) then Box(X - 2, Y - 2, 178, 130, 0.95, 0.77, 0.35);
-    if FRows[Index].LocalIndex >= 0 then Box(X, Y, 174, 126, 0.07, 0.12, 0.2)
-    else Box(X, Y, 174, 126, 0.17, 0.08, 0.23);
+    if (FFocus = 1) and (Index = FSelected) then Box(X - 2, Y - 2, 178, 108, 0.95, 0.77, 0.35);
+    if FRows[Index].LocalIndex >= 0 then Box(X, Y, 174, 104, 0.07, 0.12, 0.2)
+    else Box(X, Y, 174, 104, 0.17, 0.08, 0.23);
     Key := '';
     if FRows[Index].LocalIndex >= 0 then
       Key := CatSongs.Song[FRows[Index].LocalIndex].Path.Append(CatSongs.Song[FRows[Index].LocalIndex].Cover).ToUTF8;
@@ -387,7 +390,7 @@ begin
       if Key <> '' then FCovers[I] := UTexture.Texture.LoadTexture(CatSongs.Song[FRows[Index].LocalIndex].Path.Append(CatSongs.Song[FRows[Index].LocalIndex].Cover));
     end;
     if FCovers[I].TexNum <> 0 then Cover := FCovers[I] else Cover := FDefaultCover;
-    Cover.X := X + 51; Cover.Y := Y + 9; Cover.W := 72; Cover.H := 72;
+    Cover.X := X + 59; Cover.Y := Y + 5; Cover.W := 56; Cover.H := 56;
     DrawTexture(Cover);
   end;
 end;
@@ -424,7 +427,7 @@ begin
       case Key of
         SDLK_LEFT: Step := -1; SDLK_RIGHT: Step := 1;
         SDLK_UP: Step := -4; SDLK_DOWN: Step := 4;
-        SDLK_PAGEUP: Step := -8; else Step := 8;
+        SDLK_PAGEUP: Step := -LibraryGridPageSize; else Step := LibraryGridPageSize;
       end;
       if FFocus <> 1 then Next := 0 else Next := FSelected + Step;
       FFocus := 1;
@@ -434,7 +437,7 @@ begin
         if (Next < 0) or (Next >= Length(FRows)) then Break;
         FSelected := Next;
       end;
-      FTop := (FSelected div 8) * 8;
+      FTop := (FSelected div LibraryGridPageSize) * LibraryGridPageSize;
     end;
   end else if Key = SDLK_RETURN then begin
     if FSignIn then FLoginQueued := true else Activate;
@@ -467,10 +470,10 @@ begin
   if MouseButton = SDL_BUTTON_WHEELDOWN then begin ParseInput(SDLK_PAGEDOWN, 0, true); Exit; end;
   if MouseButton = SDL_BUTTON_WHEELUP then begin ParseInput(SDLK_PAGEUP, 0, true); Exit; end;
   if MouseButton <> SDL_BUTTON_LEFT then Exit;
-  if (X >= 660) and (Y >= 28) and (Y < 65) then Leave
-  else if (X >= 660) and (Y >= 85) and (Y < 125) then begin FQuery := ''; FFocus := 0; Changed; end
-  else if (Y >= 85) and (Y < 125) then FFocus := 0
-  else if (Y >= 130) and (Y < 175) then begin
+  if (X >= 660) and (Y >= 18) and (Y < 48) then Leave
+  else if (X >= 660) and (Y >= 58) and (Y < 90) then begin FQuery := ''; FFocus := 0; Changed; end
+  else if (Y >= 58) and (Y < 90) then FFocus := 0
+  else if (Y >= 96) and (Y < 122) then begin
     if not FSignIn then begin FSignIn := true; FFocus := 2; end
     else if X >= 640 then FLoginQueued := true
     else if X < 315 then FFocus := 2 else FFocus := 3;

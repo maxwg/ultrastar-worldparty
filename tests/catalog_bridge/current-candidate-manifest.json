@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
   "candidate": "Windows collection grid, USDB search/download controls and artist/title deduplication",
-  "created_utc": "2026-10-17T08:35:56.036524+00:00",
-  "base_checkpoint_commit": "8504109f158b1a09a4f8766f2be50d25b0a4ff2d",
-  "base_checkpoint_tree": "bd807c6b9147c1ee241203343c9633d86b13511d",
+  "created_utc": "2026-10-17T08:39:23.862809+00:00",
+  "base_checkpoint_commit": "c2ea1e37bb2734a6b75dd17e1e2a0134ad143e3f",
+  "base_checkpoint_tree": "54309e673feb60bd1080a1cf680985f60c4ce5aa",
   "scope": "Clean i386-win32 compilation, offline regressions and live authenticated USDB search/source details. Actual media installation and visual UI validation are unverified.",
   "files": [
     {
@@ -13,8 +13,8 @@
     },
     {
       "path": "docs/song-search-integration.md",
-      "bytes": 11304,
-      "sha256": "e48816ccc2df7e8260c8eab4d0b8b6190bda4f2febb5c8c524dd15786d444901"
+      "bytes": 11524,
+      "sha256": "d291c31f62e746d79f9809242d2f4e8a46a9d0718c931f0c744712c52eaa726e"
     },
     {
       "path": "game/languages/English.ini",
@@ -25,6 +25,11 @@
       "path": "game/languages/Language.new",
       "bytes": 24081,
       "sha256": "db6a67e0f11f07d0dc2d705df866dbc238a907061e18cffbaaadfa5989defa8b"
+    },
+    {
+      "path": "src/base/UCatalogAutoSignIn.pas",
+      "bytes": 527,
+      "sha256": "bf8985eec625740de178ee9e6c368af72b89b725d189b83b63ceff58a25a8399"
     },
     {
       "path": "src/base/UCommandLine.pas",
@@ -38,8 +43,8 @@
     },
     {
       "path": "src/base/ULibraryGridLayout.pas",
-      "bytes": 801,
-      "sha256": "2a54df9208935bcf841371592b46ef7d408113d5aae518ec36a27261f7a9ed27"
+      "bytes": 802,
+      "sha256": "2b05438fc903307f2926e1c495228110391982241e674f8b80592066d9988b84"
     },
     {
       "path": "src/base/USongCatalogBridge.pas",
@@ -78,8 +83,8 @@
     },
     {
       "path": "src/screens/UScreenLibrarySearch.pas",
-      "bytes": 20623,
-      "sha256": "a50242ef7d3b6163edaebdff2922aab85d2f307b6a91e577258b31b01a6672bb"
+      "bytes": 20941,
+      "sha256": "42edfddc5f4ca2d964194d80bb8f663850540d02081cfa97c243eb3f6d94de28"
     },
     {
       "path": "src/screens/UScreenMain.pas",
@@ -105,6 +110,11 @@
       "path": "src/screens/UScreenSongMenu.pas",
       "bytes": 30284,
       "sha256": "3c55b9123810811ce969854b18d9ae225289f48e31a1f79d22da5d46974ae39b"
+    },
+    {
+      "path": "tests/catalog_auto_signin_test.pas",
+      "bytes": 902,
+      "sha256": "31a4c5ef8052049d1642cf24f99718e8d6c90bd815f61ed65f426e9ff9c7ee18"
     },
     {
       "path": "tests/catalog_bridge/catalog_bridge_test.pas",
@@ -154,7 +164,7 @@
     {
       "path": "tests/library_grid_test.pas",
       "bytes": 952,
-      "sha256": "3201fd37c7f774652b5b0dadc9ee8a27413b16a54e56bbbee327a9a735cf668f"
+      "sha256": "88d244c5bf1e3e584dd4a607a14228c50f52201824dc2ce067ff64455e6440a7"
     },
     {
       "path": "tests/song_identity_test.pas",
@@ -212,9 +222,10 @@
     "bridge_test": "PASS: 375 i386-win32 assertions",
     "adapter_contract": "PASS: 39 tests, one existing POSIX-only skip",
     "identity_test": "PASS: 5 assertions",
-    "grid_test": "PASS: 62 bounds, overlap and hit-target assertions",
+    "grid_test": "PASS: 116 bounds, overlap and hit-target assertions",
     "windows_path_check": "PASS",
-    "full_build": "PASS: clean i386-win32 release build using tools/build_windows.ps1"
+    "full_build": "PASS: clean i386-win32 release build using tools/build_windows.ps1",
+    "auto_signin_test": "PASS: 9 one-attempt, busy, authenticated, missing-credentials and failure state assertions"
   },
   "live_validation": {
     "authentication": "PASS: existing CLI credential file, no values copied or printed",

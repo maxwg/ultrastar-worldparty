@@ -9,7 +9,7 @@ end;
 begin
   for I := 0 to LibraryGridPageSize - 1 do begin
     A := LibraryTileRect(I);
-    Check((A.X >= 20) and (A.Y > 200) and (A.X + A.W < 780) and (A.Y + A.H < 500));
+    Check((A.X >= 20) and (A.Y > 145) and (A.X + A.W < 780) and (A.Y + A.H < 500));
     Check(LibraryTileAt(A.X + A.W div 2, A.Y + A.H div 2) = I);
     Check(LibraryTileAt(A.X + A.W, A.Y + 10) = -1);
     Check(LibraryTileAt(A.X + 10, A.Y + A.H) = -1);
