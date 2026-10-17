@@ -5,7 +5,15 @@ const LibraryGridColumns = 4; LibraryGridPageSize = 12;
 type TLibraryTileRect = record X, Y, W, H: integer; end;
 function LibraryTileRect(Index: integer): TLibraryTileRect;
 function LibraryTileAt(X, Y: integer): integer;
+function LibraryGridMove(Current, Step, Count: integer): integer;
 implementation
+function LibraryGridMove(Current, Step, Count: integer): integer;
+begin
+  if Count <= 0 then Exit(0);
+  if Current + Step < 0 then Exit(Count - 1);
+  if Current + Step >= Count then Exit(0);
+  Result := Current + Step;
+end;
 function LibraryTileRect(Index: integer): TLibraryTileRect;
 begin
   Result.X := 42 + (Index mod LibraryGridColumns) * 184;

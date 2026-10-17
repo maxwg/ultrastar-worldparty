@@ -62,6 +62,7 @@ procedure MainThreadExec(Proc: TMainThreadExecProc; Data: Pointer);
 implementation
 
 uses
+  UTextInputEvents,
   math,
   dglOpenGL,
   UAvatars,
@@ -362,6 +363,8 @@ var
   Event:     TSDL_event;
   SimEvent:  TSDL_event;
   KeyCharUnicode: UCS4Char;
+  InputChars: UCS4String;
+  InputCharIndex: integer;
   SimKey: LongWord;
   mouseDown: boolean;
   mouseBtn:  integer;
@@ -488,12 +491,12 @@ begin
           //  Event.key.keysym.unicode := Ord('A') + Event.key.keysym.unicode - 1;
 
           // toggle in-game console if allowed
-          if boolean(Ini.Debug) and ((Event.key.keysym.sym = SInt32('~')) or (Event.key.keysym.sym = SDLK_CARET)) then
+          if (Event.type_ = SDL_KEYDOWN) and boolean(Ini.Debug) and ((Event.key.keysym.sym = SInt32('~')) or (Event.key.keysym.sym = SDLK_CARET)) then
           begin
             Display.ToggleConsole;
           end;
 
-          if Event.key.keysym.sym = SDLK_RETURN then
+          if (Event.type_ = SDL_KEYDOWN) and (Event.key.keysym.sym = SDLK_RETURN) then
           begin
             if (SDL_GetModState and (KMOD_LSHIFT + KMOD_RSHIFT + KMOD_LCTRL + KMOD_RCTRL + KMOD_LALT  + KMOD_RALT) = KMOD_LALT) then
             begin
@@ -506,24 +509,18 @@ begin
           end;
 
           // remap the "keypad enter" key to the "standard enter" key
-          if (Event.key.keysym.sym = SDLK_KP_ENTER) then Event.key.keysym.sym := SDLK_RETURN;
+          if (Event.type_ = SDL_KEYDOWN) and (Event.key.keysym.sym = SDLK_KP_ENTER) then Event.key.keysym.sym := SDLK_RETURN;
 
-          if not Assigned(Display.NextScreen) then
-          begin //drop input when changing screens
-            KeyCharUnicode:=0;
-            if (Event.type_ = SDL_TEXTINPUT) and (Event.text.text <> '') then
-            try
-              KeyCharUnicode:=UnicodeStringToUCS4String(UnicodeString(UTF8String(Event.text.text)))[0];
-              //KeyCharUnicode:=UnicodeStringToUCS4String(UnicodeString(Event.key.keysym.unicode))[1];//Event.text.text)[0];
-            except
-            end;
-
-			SimKey :=0;
-            if((Event.key.keysym.sym > Low(LongWord)) and (Event.key.keysym.sym < High(LongWord))) then
-            begin
-              SimKey := Event.key.keysym.sym;
-            end;
-
+          if not Assigned(Display.NextScreen) or Display.NextScreen^.AcceptsTransitionInput then
+          begin
+            SetLength(InputChars, 1); InputChars[0] := 0;
+            SimKey := 0;
+            if Event.type_ = SDL_TEXTINPUT then
+              InputChars := DecodeTextInput(UTF8String(Event.text.text))
+            else if Event.key.keysym.sym > 0 then SimKey := Event.key.keysym.sym;
+            for InputCharIndex := 0 to High(InputChars) do begin
+              KeyCharUnicode := InputChars[InputCharIndex];
+              SuppressKey := false;
             // if print is pressed -> make screenshot and save to screenshot path
             if (SimKey = SDLK_SYSREQ) or (SimKey = SDLK_PRINTSCREEN) then
               Display.SaveScreenShot
@@ -552,7 +549,9 @@ begin
 
             end;
 
-            if not SuppressKey then
+            end; // dispatch every character from SDL_TEXTINPUT
+
+            if (Event.type_ = SDL_KEYDOWN) and not SuppressKey then
             begin
               if (Event.key.keysym.sym = SDLK_F11) and (CurrentWindowMode <> Mode_Fullscreen) then //toggle fullscreen only switch borderless fullscreen in windowed mode
               begin

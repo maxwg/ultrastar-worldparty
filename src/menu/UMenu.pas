@@ -157,6 +157,7 @@ type
       function InRegionY(Y: real; A: TMouseOverRect): boolean;
       function InteractAt(X, Y: real): integer;
       function CollectionAt(X, Y: real): integer;
+      function AcceptsTransitionInput: boolean; virtual;
       procedure OnShow; virtual;
       procedure OnShowFinish; virtual;
       procedure OnHide; virtual;
@@ -1682,6 +1683,9 @@ begin
   AddStatic(X,   Y,   W,   H,   0, 0, 0, Skin.GetTextureFileName('MainBar'), TEXTURE_TYPE_COLORIZED);
   AddStatic(X+2, Y+2, W-4, H-4, 1, 1, 1, Skin.GetTextureFileName('MainBar'), TEXTURE_TYPE_COLORIZED);
 end;
+
+function TMenu.AcceptsTransitionInput: boolean;
+begin Result := false; end;
 
 procedure TMenu.OnShow;
 begin

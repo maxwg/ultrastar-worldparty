@@ -196,6 +196,7 @@ type
 
       SongIndex:    integer; //Index of Song that is playing since UScreenScore...
 
+      AutoPlayFolder: string;
       constructor Create; override;
       function ParseInput(PressedKey: cardinal; CharCode: UCS4Char; PressedDown: boolean): boolean; override;
       function ParseMouse(MouseButton: integer; BtnDown: boolean; X, Y: integer): boolean; override;
@@ -229,7 +230,7 @@ uses
   sdl2,
   SysUtils,
   StrUtils,
-  UAudioPlaybackBase,
+  UAudioPlaybackBase, UDisplay,
   UDataBase,
   UDllManager,
   UGraphic,
@@ -1710,6 +1711,16 @@ var
   Increment: real;
 begin
   Result := true;
+  if (AutoPlayFolder <> '') and not Assigned(Display.NextScreen) then begin
+    for I := 0 to High(CatSongs.Song) do
+      if not CatSongs.Song[I].Main and
+         SameFileName(ExcludeTrailingPathDelimiter(CatSongs.Song[I].Path.ToNative),
+                      ExcludeTrailingPathDelimiter(AutoPlayFolder)) then begin
+        AutoPlayFolder := ''; SetSubselection(); SkipTo(I, true); StartSong; Exit;
+      end;
+    AutoPlayFolder := '';
+    UGraphic.ScreenPopupError.ShowPopup('Downloaded song could not be loaded. Check its chart and media.');
+  end;
   if Self.Text[Self.SearchTextPlaceholder].Visible or UGraphic.ScreenSongMenu.Visible then
   begin
     Self.Text[Self.SearchText].Selected := false;

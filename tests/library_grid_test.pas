@@ -18,6 +18,11 @@ begin
       Check((A.X + A.W <= B.X) or (B.X + B.W <= A.X) or (A.Y + A.H <= B.Y) or (B.Y + B.H <= A.Y));
     end;
   end;
+  Check(LibraryGridMove(0, -4, 17) = 16);
+  Check(LibraryGridMove(16, 4, 17) = 0);
+  Check(LibraryGridMove(0, -1, 17) = 16);
+  Check(LibraryGridMove(4, 4, 17) = 8);
+  Check(LibraryGridMove(0, -4, 0) = 0);
   Check(LibraryTileAt(0, 0) = -1);
   Check(LibraryTileAt(780, 580) = -1);
   WriteLn('PASS: ', Checks, ' grid bounds, overlap and hit-target assertions');

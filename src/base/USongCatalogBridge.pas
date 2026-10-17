@@ -1158,14 +1158,16 @@ begin
 end;
 
 procedure TCatalogSession.FinishPending(const MessageText: string; const Code: string);
+var WasDownload: boolean;
 begin
+  WasDownload := FPendingOp = 'download';
   FBusy := false;
   FPendingID := '';
   FPendingOp := '';
   FPendingDeadline := 0;
   FPendingSongID := 0;
   FDetailReceived := false;
-  if Code <> '' then ClearDetails;
+  if (Code <> '') and not WasDownload then ClearDetails;
   FStatus := UTF8String(MessageText);
   FErrorCode := Code;
   if (Code = 'request_timeout') or (Code = 'transport_failed') or
@@ -1397,6 +1399,8 @@ begin
       if Code = 'busy' then FStatus := 'Catalog is busy. Try again shortly.'
       else if Code = 'authentication_required' then FStatus := 'Sign-in is required again.'
       else if Code = 'download_disabled' then FStatus := 'Downloads are disabled.'
+      else if (Code = 'download_failed') and JSONString(Obj, 'message', Row) then
+        FStatus := Copy(Row, 1, 512)
       else FStatus := 'Catalog request failed (' + Code + ').';
       // v1 errors are terminal, including busy; adapter does not follow them with idle.
       FinishPending(string(FStatus), Code);

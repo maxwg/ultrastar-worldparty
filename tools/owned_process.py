@@ -233,9 +233,12 @@ def _cleanup_job(job, tracked, cleanup_timeout):
             raise TimeoutError("Owned process did not signal within the cleanup deadline")
     if tracking_error is not None:
         raise tracking_error
+    # Short-lived descendants may exit between polls and never get a retained
+    # handle. Atomic Job assignment and zero ActiveProcesses prove they are
+    # gone; TotalProcesses is a lifetime counter, not a live-process count.
     accounting = _accounting(job)
-    if accounting.ActiveProcesses or accounting.TotalProcesses != len(tracked):
-        raise RuntimeError("Job created an unobserved process; cleanup cannot be verified "
+    if accounting.ActiveProcesses:
+        raise RuntimeError("Job still has active processes after cleanup "
                            f"(active={accounting.ActiveProcesses}, "
                            f"total={accounting.TotalProcesses}, tracked={len(tracked)})")
 
@@ -277,7 +280,7 @@ def _stdio(mode, handles, extra_handles):
         extra_handles.append(reader.value)
         handles.append(writer.value)
         _check(_set_handle_information(reader, 1, 0), "SetHandleInformation(pipe reader)")
-        return nul, writer.value, nul, reader.value
+        return nul, writer.value, writer.value, reader.value
     outputs = []
     for standard_id in (-11, -12):
         original = _get_std(standard_id & 0xFFFFFFFF)
@@ -307,7 +310,7 @@ def run_owned(argv: Sequence[str], *, cwd: str, timeout: float,
 
     Root exit also cleans remaining descendants. stdin is NUL; stdout/stderr
     are either NUL or explicit copies of the caller's handles. capture redirects
-    stdout to a bounded, synchronously polled pipe; stderr stays NUL. No reader
+    stdout and stderr to one bounded, synchronously polled pipe. No reader
     thread or EOF wait can outlive cancellation or a descendant holding a pipe.
     Errors fail closed and propagate. No fallback if Job association is blocked.
     A cleanup failure raises rather than reporting successful cancellation.

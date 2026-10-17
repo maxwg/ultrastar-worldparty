@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
   "candidate": "Windows collection grid, USDB search/download controls and artist/title deduplication",
-  "created_utc": "2026-10-17T08:39:23.862809+00:00",
-  "base_checkpoint_commit": "c2ea1e37bb2734a6b75dd17e1e2a0134ad143e3f",
-  "base_checkpoint_tree": "54309e673feb60bd1080a1cf680985f60c4ce5aa",
+  "created_utc": "2026-10-17T08:48:16.843835+00:00",
+  "base_checkpoint_commit": "b5f666f4e035f94cf01f57c27f61b4779f5bc746",
+  "base_checkpoint_tree": "24f47edac3db4aa89029cf346b5de84a9be04c98",
   "scope": "Clean i386-win32 compilation, offline regressions and live authenticated USDB search/source details. Actual media installation and visual UI validation are unverified.",
   "files": [
     {
@@ -13,8 +13,8 @@
     },
     {
       "path": "docs/song-search-integration.md",
-      "bytes": 11524,
-      "sha256": "d291c31f62e746d79f9809242d2f4e8a46a9d0718c931f0c744712c52eaa726e"
+      "bytes": 12898,
+      "sha256": "e569b13c71ced755a5deb6b41139ec0b628dafabcc860c719bffd1acc75368fe"
     },
     {
       "path": "game/languages/English.ini",
@@ -43,13 +43,18 @@
     },
     {
       "path": "src/base/ULibraryGridLayout.pas",
-      "bytes": 802,
-      "sha256": "2b05438fc903307f2926e1c495228110391982241e674f8b80592066d9988b84"
+      "bytes": 1092,
+      "sha256": "6b769ba3ce2e0b51b823da1a900c14a3ab56d6478e006e449f6f837aa934c86b"
+    },
+    {
+      "path": "src/base/UMain.pas",
+      "bytes": 19748,
+      "sha256": "a2a483238731c7cf2bc7c19c20b33f3b4da92dde03d0386fe472b4782eeb6c99"
     },
     {
       "path": "src/base/USongCatalogBridge.pas",
-      "bytes": 51188,
-      "sha256": "b5138b0512dc1935b7386ee38058fbd56bdc9864ed097be6967a342440b06bc9"
+      "bytes": 51397,
+      "sha256": "2a62796a45eef12b11d5974fd7933c87c7105157d8339a7474ab8a99067066a1"
     },
     {
       "path": "src/base/USongCatalogInput.pas",
@@ -77,14 +82,24 @@
       "sha256": "9bfeffce713ed021833dc7254876273c59aae20f07ba03c3a17e2a198fc3df72"
     },
     {
+      "path": "src/base/UTextInputEvents.pas",
+      "bytes": 278,
+      "sha256": "7a7ed85f0b0bf65718fd1a7c0b48979da5c57035170f1138b3321682b3822021"
+    },
+    {
       "path": "src/media/UAudioPlayback_Bass.pas",
       "bytes": 25173,
       "sha256": "7d2d3e6147d6d1cd4e662d9c53c20621c040ad9825d4fe636289be17fb91e204"
     },
     {
+      "path": "src/menu/UMenu.pas",
+      "bytes": 60297,
+      "sha256": "c178a07d0732e5cd5d72f5610dd8d0e7fb025d84ad401804b657a4a16acc36b5"
+    },
+    {
       "path": "src/screens/UScreenLibrarySearch.pas",
-      "bytes": 20941,
-      "sha256": "42edfddc5f4ca2d964194d80bb8f663850540d02081cfa97c243eb3f6d94de28"
+      "bytes": 22140,
+      "sha256": "482db7df2bf5d6bca7818421a3260bea912addc6e83b82d1439b98e0304f59f4"
     },
     {
       "path": "src/screens/UScreenMain.pas",
@@ -98,8 +113,8 @@
     },
     {
       "path": "src/screens/UScreenSong.pas",
-      "bytes": 96819,
-      "sha256": "e6264f21d42117e099cddb2305062176fbcfe2c4837cd958363cc36d5b2a292c"
+      "bytes": 97413,
+      "sha256": "707a5656286661e45e02d16f5e5335f93cd4a56262c217b22f11be0bc7163477"
     },
     {
       "path": "src/screens/UScreenSongCatalog.pas",
@@ -112,14 +127,19 @@
       "sha256": "3c55b9123810811ce969854b18d9ae225289f48e31a1f79d22da5d46974ae39b"
     },
     {
+      "path": "tests/catalog/test_job_cleanup.py",
+      "bytes": 1699,
+      "sha256": "a4833fbed4d7e13d942e0aaab73354de940e98245805ec56d69febf32cd1d381"
+    },
+    {
       "path": "tests/catalog_auto_signin_test.pas",
       "bytes": 902,
       "sha256": "31a4c5ef8052049d1642cf24f99718e8d6c90bd815f61ed65f426e9ff9c7ee18"
     },
     {
       "path": "tests/catalog_bridge/catalog_bridge_test.pas",
-      "bytes": 58105,
-      "sha256": "9e42f0a32f8e0a2e64ecda159cc5cb93bab26168ef81fc0566a7aafc13e825bb"
+      "bytes": 58513,
+      "sha256": "bc2d1098d191e44e8a97a129f00d85a75126d0fdb4c276d291202f45dc643629"
     },
     {
       "path": "tests/catalog_bridge/catalog_pipe_error_expression_test.pas",
@@ -163,13 +183,18 @@
     },
     {
       "path": "tests/library_grid_test.pas",
-      "bytes": 952,
-      "sha256": "88d244c5bf1e3e584dd4a607a14228c50f52201824dc2ce067ff64455e6440a7"
+      "bytes": 1157,
+      "sha256": "c3231252a0b04a559cf4a0eef853af5baeb6098fc75a9112eafcd9b94e77cd35"
     },
     {
       "path": "tests/song_identity_test.pas",
       "bytes": 796,
       "sha256": "3efd6f8e895e9c4f39f3ae782dde0a28c789c6f73bb6f71e45e4174b12e91a3e"
+    },
+    {
+      "path": "tests/text_input_events_test.pas",
+      "bytes": 548,
+      "sha256": "2b5ec663e3ffb97814021e9b77f52bbb7be0e6fd283073e39f6af1d994e772a9"
     },
     {
       "path": "tools/build_windows.ps1",
@@ -178,13 +203,13 @@
     },
     {
       "path": "tools/owned_process.py",
-      "bytes": 21003,
-      "sha256": "9f6f62813541fa5f7e6a943e0be025727e76e697f0fa803930ee3fa702a91feb"
+      "bytes": 21175,
+      "sha256": "fc84c12070b55eca3fd6c19e8090b0699a94f9cc942507192785d0c1a4b2358d"
     },
     {
       "path": "tools/song_catalog.py",
-      "bytes": 32362,
-      "sha256": "87db73e4c27dc797e50f90110675fbf2c8a6953f46ecffa8677bf50f597e354f"
+      "bytes": 34016,
+      "sha256": "323f38513d30be5f31834313959b525a47dd42a0a431caabb241e1cc73179f13"
     }
   ],
   "source_hash_normalization": "CRLF normalized to LF",
@@ -219,20 +244,23 @@
     }
   },
   "offline_validation": {
-    "bridge_test": "PASS: 375 i386-win32 assertions",
-    "adapter_contract": "PASS: 39 tests, one existing POSIX-only skip",
+    "bridge_test": "PASS: 378 i386-win32 assertions, including retained-source retries",
+    "adapter_contract": "PASS: 42 tests, one existing POSIX-only skip",
     "identity_test": "PASS: 5 assertions",
-    "grid_test": "PASS: 116 bounds, overlap and hit-target assertions",
+    "grid_test": "PASS: 121 layout and wrap-navigation assertions",
     "windows_path_check": "PASS",
     "full_build": "PASS: clean i386-win32 release build using tools/build_windows.ps1",
-    "auto_signin_test": "PASS: 9 one-attempt, busy, authenticated, missing-credentials and failure state assertions"
+    "auto_signin_test": "PASS: 9 one-attempt, busy, authenticated, missing-credentials and failure state assertions",
+    "job_cleanup": "PASS: 3 native Windows cleanup and stderr-capture tests",
+    "text_input": "PASS: complete ASCII, accented and astral text events"
   },
   "live_validation": {
     "authentication": "PASS: existing CLI credential file, no values copied or printed",
     "query": "Adele",
     "search_matches": 7,
     "source_media_links": 2,
-    "actual_download": "not performed",
-    "visual_ui": "unverified: Windows UI activation access denied"
+    "actual_download": "PASS: Adele - Lovesong, USDB 28904, second listed source; chart and ffprobe-verified media installed",
+    "visual_ui": "unverified: Windows UI activation access denied",
+    "automatic_playback": "Implemented; not verified on screen"
   }
 }

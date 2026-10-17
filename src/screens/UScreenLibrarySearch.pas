@@ -26,7 +26,7 @@ type
     FFocus, FTop, FSelected, FRemoteCount, FSource: integer;
     FDetailsID: Int64;
     FSearchDue: QWord;
-    FSignIn, FRescan, FLoginQueued, FAutoLoginAttempted: boolean;
+    FSignIn, FRescan, FLoginQueued, FAutoLoginAttempted, FAutoDownload, FLeaving: boolean;
     procedure Changed;
     procedure BuildRows;
     procedure UpdateView;
@@ -40,6 +40,7 @@ type
     destructor Destroy; override;
     procedure Open(const Query: UTF8String);
     procedure OnHide; override;
+    function AcceptsTransitionInput: boolean; override;
     function Draw: boolean; override;
     function ParseInput(Key: cardinal; CharCode: UCS4Char; Down: boolean): boolean; override;
     function ParseMouse(MouseButton: integer; Down: boolean; X, Y: integer): boolean; override;
@@ -139,16 +140,17 @@ end;
 
 procedure TScreenLibrarySearch.Open(const Query: UTF8String);
 begin
+  FLeaving := false;
   FQuery := Query; FLastQuery := #1; FSelected := 0; FTop := 0;
   FFocus := 0; FDetailsID := 0; FSignIn := false;
-  FRemoteCount := -1; FLoginQueued := false;
+  FRemoteCount := -1; FLoginQueued := false; FAutoDownload := false;
   StartSession;
   Changed;
 end;
 
 procedure TScreenLibrarySearch.Changed;
 begin
-  FSearchDue := GetTickCount64 + 500;
+  FSearchDue := GetTickCount64 + 200;
   FDetailsID := 0; FSelected := 0; FTop := 0;
   BuildRows;
 end;
@@ -198,11 +200,12 @@ end;
 
 procedure TScreenLibrarySearch.Tick;
 begin
-  if not Assigned(FSession) then Exit;
+  if FLeaving or not Assigned(FSession) then Exit;
   FSession.Poll;
   if (FSession.InstalledFolder <> '') and not FSession.Busy and
      (FSession.InstalledFolder <> FLastInstalled) then begin
     FLastInstalled := FSession.InstalledFolder;
+    ScreenSong.AutoPlayFolder := FLastInstalled;
     FRescan := true; Leave; Exit;
   end;
   if FSession.Authenticated and not FSession.Busy and FSignIn then begin
@@ -224,6 +227,15 @@ begin
     if FSession.Search('', '', FQuery) then begin
       FLastQuery := FQuery; FRemoteCount := -1; FDetailsID := 0;
       BuildRows;
+    end;
+  end;
+  if not FSession.Authenticated then FAutoDownload := false;
+  if FAutoDownload and not FSession.Busy and (FDetailsID > 0) then begin
+    if (FSession.ErrorCode <> '') and (FSource + 1 < FSession.DetailLinks.Count) then Inc(FSource)
+    else if FSession.ErrorCode <> '' then FAutoDownload := false;
+    if FAutoDownload and (FSession.DetailSongID = FDetailsID) then begin
+      if FSource < FSession.DetailLinks.Count then Activate
+      else FAutoDownload := false;
     end;
   end;
   if FRemoteCount <> FSession.ResultCount then begin
@@ -258,7 +270,8 @@ begin
   end;
   if (FDetailsID > 0) and Assigned(FSession) then begin
     Text[FPageText].Text := '';
-    Text[FCountText].Text := 'USDB SOURCES - select a source, then Download (D)';
+    if FAutoDownload then Text[FCountText].Text := 'Download & sing - source ' + IntToStr(FSource + 1)
+    else Text[FCountText].Text := 'USDB SOURCES - select a source, then Download (D)';
     for I := 0 to High(FRowTexts) do begin
       Text[FRowTexts[I]].Visible := I < 8;
       Caption := '';
@@ -307,7 +320,7 @@ begin
     Text[FHintText].Text := 'Tab: user / password / sign in   Enter: sign in   F2: close account form'
   else if FDetailsID > 0 then
     Text[FHintText].Text := 'Up/Down: source   D / Enter: download   Esc: results   F2: account'
-  else Text[FHintText].Text := 'Type to search   Arrows: select   Enter: open   Tab: search/list   Esc: back';
+  else Text[FHintText].Text := 'Type to search   Arrows: select   Enter: select / download   Tab: search/list   Esc: back';
 end;
 
 procedure TScreenLibrarySearch.Activate;
@@ -329,18 +342,22 @@ begin
   end else if (Row.RemoteIndex >= 0) and Assigned(FSession) and
               not FSession.Busy then begin
     Song := FSession.ResultItems[Row.RemoteIndex];
-    if FSession.Details(Song.SongID) then begin FDetailsID := Song.SongID; FSource := 0; end;
+    if FSession.Details(Song.SongID) then begin FDetailsID := Song.SongID; FSource := 0; FAutoDownload := true; end;
   end;
 end;
 
 procedure TScreenLibrarySearch.Leave;
 begin
+  FLeaving := true; FAutoDownload := false;
   if FRescan then begin
     FRescan := false;
     ScreenMain.ReloadSongs(true);
     FadeTo(@ScreenMain);
   end else FadeTo(@ScreenSong);
 end;
+
+function TScreenLibrarySearch.AcceptsTransitionInput: boolean;
+begin Result := true; end;
 
 procedure TScreenLibrarySearch.OnHide;
 begin
@@ -397,7 +414,9 @@ end;
 
 function TScreenLibrarySearch.Draw: boolean;
 begin
-  Tick; UpdateView;
+  Tick;
+  if FLeaving then begin DrawBG; DrawFG; Exit(true); end;
+  UpdateView;
   DrawBG;
   if FDetailsID = 0 then DrawGrid;
   DrawFG; Result := true;
@@ -411,7 +430,7 @@ begin
     FSignIn := not FSignIn;
     if FSignIn then FFocus := 2 else begin FFocus := 0; ClearPassword; end;
   end else if Key = SDLK_ESCAPE then begin
-    if FDetailsID > 0 then begin FDetailsID := 0; BuildRows; end
+    if FDetailsID > 0 then begin FAutoDownload := false; FDetailsID := 0; BuildRows; end
     else if FSignIn then begin FSignIn := false; FFocus := 0; ClearPassword; end
     else Leave;
   end else if Key = SDLK_TAB then begin
@@ -419,6 +438,7 @@ begin
     else FFocus := 1 - Min(1, FFocus);
   end else if ((Key = SDLK_DOWN) or (Key = SDLK_UP) or (Key = SDLK_LEFT) or (Key = SDLK_RIGHT) or (Key = SDLK_PAGEDOWN) or (Key = SDLK_PAGEUP)) then begin
     if FDetailsID > 0 then begin
+      if Assigned(FSession) and FSession.Busy then Exit;
       if (Key = SDLK_UP) or (Key = SDLK_LEFT) or (Key = SDLK_PAGEUP) then Step := -1 else Step := 1;
       if (Key = SDLK_PAGEUP) or (Key = SDLK_PAGEDOWN) then Step := Step * 8;
       if Assigned(FSession) then
@@ -429,7 +449,8 @@ begin
         SDLK_UP: Step := -4; SDLK_DOWN: Step := 4;
         SDLK_PAGEUP: Step := -LibraryGridPageSize; else Step := LibraryGridPageSize;
       end;
-      if FFocus <> 1 then Next := 0 else Next := FSelected + Step;
+      if (FFocus <> 1) and (Step > 0) then Next := 0
+      else Next := LibraryGridMove(FSelected, Step, Length(FRows));
       FFocus := 1;
       FSelected := EnsureRange(Next, 0, Max(0, Length(FRows) - 1));
       while (FSelected < Length(FRows)) and (FRows[FSelected].Caption = '') do begin
@@ -478,6 +499,7 @@ begin
     else if X >= 640 then FLoginQueued := true
     else if X < 315 then FFocus := 2 else FFocus := 3;
   end else if (FDetailsID > 0) and (Y >= 220) and (Y < 460) then begin
+    if Assigned(FSession) and FSession.Busy then Exit;
     Index := (Y - 220) div 30; FFocus := 1;
     FSource := (FSource div 8) * 8 + Index; Activate;
   end else if FDetailsID = 0 then begin

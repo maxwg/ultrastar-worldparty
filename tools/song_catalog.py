@@ -263,6 +263,8 @@ class Catalog:
         # This is only a process-local indication that the login flow was
         # verified. It is never loaded from or written to disk.
         self.authenticated = False
+        self.search_cache = {}
+        self.detail_cache = {}
 
     def request(self, path, data=None):
         body = urllib.parse.urlencode(data).encode() if data is not None else None
@@ -284,6 +286,8 @@ class Catalog:
     def login(self, user, password):
         self.authenticated = False
         self.jar.clear()
+        self.search_cache.clear()
+        self.detail_cache.clear()
         if not user or not password:
             raise ValueError('Enter your existing USDB username and password.')
         try:
@@ -303,22 +307,36 @@ class Catalog:
         self.authenticated = True
 
     def search(self, artist, title, offset=0):
+        key = (artist.strip().casefold(), title.strip().casefold(), offset)
+        cached = self.search_cache.get(key)
+        if self.authenticated and cached and time.monotonic() - cached[0] < 300:
+            return [dict(row) for row in cached[1]]
         document = self.request('/?link=list', {
             'interpret': artist[:200], 'title': title[:200], 'limit': 6,
             'start': max(0, int(offset)), 'order': 'lastchange', 'ud': 'desc'})
         self.check_session_page(document)
-        return parse_search(document)
+        rows = parse_search(document)
+        if len(self.search_cache) >= 64:
+            self.search_cache.pop(next(iter(self.search_cache)))
+        self.search_cache[key] = (time.monotonic(), rows)
+        return [dict(row) for row in rows]
 
     def details(self, song_id):
         song_id = int(song_id)
         if song_id <= 0:
             raise ValueError('Invalid song ID.')
+        cached = self.detail_cache.get(song_id)
+        if self.authenticated and cached and time.monotonic() - cached[0] < 300:
+            return cached[1], list(cached[2])
         chart_page = self.request('/?link=editsongs&id=' + str(song_id))
         self.check_session_page(chart_page)
         chart = parse_chart(chart_page)
         detail_page = self.request('/?link=detail&id=' + str(song_id))
         self.check_session_page(detail_page)
         links = media_links(detail_page)
+        if len(self.detail_cache) >= 64:
+            self.detail_cache.pop(next(iter(self.detail_cache)))
+        self.detail_cache[song_id] = (time.monotonic(), chart, links)
         return chart, links
 
 
@@ -383,7 +401,8 @@ def install_song(root, song_id, chart, url, cancelled, notify=emit, downloader='
             raise ValueError('FFmpeg/ffprobe is required to verify playable audio.')
         probe = str(Path(probe).resolve())
         args = [executable, '--ignore-config', '--no-playlist', '--no-warnings',
-                '--newline', '--progress', '--max-filesize', '500M', '-f', 'best[ext=mp4]',
+                '--newline', '--progress', '--max-filesize', '500M', '-f', 'bestvideo[ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+                '--merge-output-format', 'mp4', '--ffmpeg-location', str(Path(probe).parent),
                 '-o', str(stage / 'media.mp4'), '--', url]
         # No cookie/password is passed to yt-dlp. Only the public media URL.
         if os.name == 'nt':
@@ -401,10 +420,16 @@ def install_song(root, song_id, chart, url, cancelled, notify=emit, downloader='
             # Do not mix downloader output with the JSON-lines control protocol.
             # Windows shows the existing indeterminate download state.
             result = run_owned(args, cwd=str(stage), timeout=600,
-                               stdout='devnull', cancel=cancelled, cleanup_timeout=3)
+                               stdout='capture', cancel=cancelled, cleanup_timeout=3, max_output_bytes=262144)
             if result.reason != 'exited':
                 raise ValueError('Download cancelled or timed out.')
             returncode = result.returncode
+            if returncode:
+                output = result.stdout.decode('utf-8', errors='replace') if isinstance(result.stdout, bytes) else str(result.stdout)
+                if 'Video unavailable' in output or 'not available' in output or 'Private video' in output:
+                    raise ValueError('This source video is unavailable. Trying another USDB source if listed.')
+                if 'Sign in to confirm' in output:
+                    raise ValueError('YouTube requires verification for this video. Try another source.')
         else:
             child = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                      text=True, encoding='utf-8', errors='replace', start_new_session=True)

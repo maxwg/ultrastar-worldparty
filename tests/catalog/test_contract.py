@@ -690,6 +690,31 @@ class ParserAndProtocolTests(unittest.TestCase):
         self.assertEqual(search.call_args_list, [unittest.mock.call('Adele', '', 0), unittest.mock.call('', 'Adele', 0)])
         self.assertEqual(events[0]['songs'], [first, second])
 
+    def test_search_cache_uses_query_and_returns_independent_rows(self):
+        instance = catalog.Catalog(); instance.authenticated = True
+        row = '<tr class="list_tr1"><td><a onclick="show_detail(42)">Adele</a></td><td>Hello</td><td></td><td></td><td></td><td></td><td>English</td></tr>'
+        with patch.object(instance, 'request', return_value=row) as request:
+            first = instance.search('Adele', '')
+            first[0]['title'] = 'changed locally'
+            second = instance.search('ADELE', '')
+            self.assertEqual(second[0]['title'], 'Hello')
+            self.assertEqual(request.call_count, 1)
+
+    def test_search_cache_expires(self):
+        instance = catalog.Catalog(); instance.authenticated = True
+        with patch.object(instance, 'request', return_value='') as request:
+            with patch.object(catalog.time, 'monotonic', return_value=100): instance.search('Adele', '')
+            with patch.object(catalog.time, 'monotonic', return_value=401): instance.search('Adele', '')
+            self.assertEqual(request.call_count, 2)
+
+    def test_signed_out_session_does_not_reuse_authenticated_cache(self):
+        instance = catalog.Catalog(); instance.authenticated = True
+        with patch.object(instance, 'request', return_value='') as request:
+            instance.search('Adele', '')
+            instance.authenticated = False
+            instance.search('Adele', '')
+            self.assertEqual(request.call_count, 2)
+
 if __name__ == '__main__':
     result = unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.loadTestsFromTestCase(ParserAndProtocolTests))
     raise SystemExit(0 if result.wasSuccessful() else 1)

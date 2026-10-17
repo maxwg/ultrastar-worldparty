@@ -8,7 +8,7 @@ matches appear first, followed by a separately aligned USDB section. Duplicate a
 normalized whitespace and straight/curly apostrophe equivalence. Named versions
 such as `(Live)` remain distinct. No existing song files are deleted.
 
-Search is debounced for 500 ms and USDB searches artist OR title. The adapter
+Search is debounced for 200 ms and USDB searches artist OR title. The adapter
 returns a bounded first page, deduplicated by source ID; display rows also hide
 songs already present locally. Arrow keys navigate cards; PageUp/PageDown or
 the wheel change pages. Cards show local cover art, artist/title and source
@@ -16,12 +16,15 @@ badges. Enter or a card click opens the local song or remote source details. F2 
 The idle session is kept in helper memory for this application's lifetime;
 passwords are cleared after submission and never written to configuration.
 
-A verified USDB source can be installed with D/Enter or its Download row. The
+Selecting a USDB card downloads immediately after source details load, tries
+the next listed source if one fails, then refreshes the library and starts the
+installed song automatically. Manual source selection remains available. The
 integrated screen explicitly opts into the adapter's existing download support;
 the older developer metadata screen still does not. Media is staged outside
 the scanned songs folder, checked with ffprobe, and the chart is published last.
 The destination is the writable local game `songs` directory. Completion rescans
-and returns to song selection. Leaving during an operation terminates the owned
+and queues the installed folder for karaoke playback once song selection
+finishes initializing. Leaving during an operation terminates the owned
 helper; Windows downloader/probe descendants use non-inheritable kill-on-close
 Jobs. Interrupted staging is outside the library and cannot appear playable.
 
@@ -38,8 +41,10 @@ existing POSIX-only skip), 375 bridge assertions, five identity assertions, and
 116 grid bounds/overlap/hit-target assertions and nine auto-sign-in state checks. Saved credentials from the
 installed UltraStar CLI successfully authenticated through the live adapter:
 Adele returned seven results and source details returned two verified media
-links. Credential values were not printed or copied. Actual media installation
-and visual UI checks remain unverified; Windows UI activation returned access denied.
+links. Credential values were not printed or copied. A live download of Adele - Lovesong (USDB 28904) succeeded using the second
+listed source after the first proved unavailable; ffprobe verified its audio.
+Visual UI and automatic karaoke playback remain unverified on screen; Windows
+UI activation returned access denied.
 
 ## Historical metadata-only developer screen
 
@@ -174,3 +179,21 @@ Downloads remain disabled. Before exposing installation, resolve descendant
 ownership on helper termination, choose an explicit scanned install directory,
 and validate progress/cancellation/publication handling. Do not infer release
 readiness from the offline metadata/source-details tests.
+
+## Responsiveness and downloads (2026-10-17)
+
+Up from the first grid row wraps to the last result, making USDB matches easy
+to reach. Search accepts input during its opening transition and dispatches all
+Unicode characters in SDL_TEXTINPUT events rather than discarding all but the
+first. Other screens retain their transition input policy.
+
+USDB queries and chart/source details have a five-minute process-memory cache,
+bounded to 64 entries per cache and cleared on sign-in. Credentials are never
+cached on disk. Query results are copied before returning them to callers.
+
+Downloads prefer H.264 MP4 plus M4A streams with FFmpeg merging, with combined
+format fallback. Errors show a bounded diagnostic message. Windows stderr is
+captured together with stdout. Job cleanup checks zero active processes after
+termination; the lifetime process counter can include helpers that exited
+between polls and is not evidence of a leak. Atomic Job assignment and
+kill-on-close ownership remain enforced.

@@ -1104,6 +1104,10 @@ begin
     Check(not S.DownloadSong(2147483648, Link, 'relative'), 'relative install root rejected');
     Check(S.DownloadSong(2147483648, Link, Root), 'explicit source download starts'); Latest;
     Check(not S.DownloadSong(2147483648, Link, Root), 'double click cannot start second download');
+    Reply('error', ',"code":"download_failed","message":"This source video is unavailable."');
+    Check(not S.Busy and (S.DetailLinks.Count = 1), 'source failure retains verified links for retry');
+    Check(Pos('unavailable', string(S.Status)) > 0, 'download failure reason is visible');
+    Check(S.DownloadSong(2147483648, Link, Root), 'verified source can retry after terminal download error'); Latest;
     Reply('progress', ',"percent":30');
     Check(S.Busy and (S.ErrorCode = ''), 'download progress keeps session alive');
     O := TJSONObject.Create;

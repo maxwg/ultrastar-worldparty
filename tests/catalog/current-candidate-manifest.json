@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
   "purpose": "Current source and offline-test identity only; does not inherit native Windows validation from the historical retained manifest or receipts.",
-  "base_commit": "8504109f158b1a09a4f8766f2be50d25b0a4ff2d",
+  "base_commit": "b5f666f4e035f94cf01f57c27f61b4779f5bc746",
   "wire_protocol_version": 1,
   "backend_sha256": {
-    "song_catalog.py": "87db73e4c27dc797e50f90110675fbf2c8a6953f46ecffa8677bf50f597e354f",
-    "owned_process.py": "9f6f62813541fa5f7e6a943e0be025727e76e697f0fa803930ee3fa702a91feb"
+    "song_catalog.py": "323f38513d30be5f31834313959b525a47dd42a0a431caabb241e1cc73179f13",
+    "owned_process.py": "fc84c12070b55eca3fd6c19e8090b0699a94f9cc942507192785d0c1a4b2358d"
   },
-  "test_contract_sha256": "4529a0704e8cb3c3ad69cd8a538161159e7f9f7cd75d91d6316e6ccbcf8188d9",
+  "test_contract_sha256": "0c7ab5f8ab03920cb23fc1d401bb5165894cbee4af003f194ea6bc7325e8e2fe",
   "retained_manifest_sha256": "1b2b4c0de65e8412b62d93b4cbe66686fd84b3429f130244e6fbcf957fa78b8b",
   "windows_test_sources": [
     {
@@ -22,7 +22,7 @@
   "verification": {
     "offline_contract": {
       "status": "passed",
-      "test_count": 39,
+      "test_count": 42,
       "command": "python3 -I -S -B tests/catalog/test_contract.py --backend tools",
       "network": "No catalog request; socket connect audit hook denies network in the tests.",
       "repeated_runs": 1,
@@ -31,8 +31,13 @@
     "native_windows_suites": {
       "status": "not_run_for_this_candidate",
       "note": "Earlier Windows receipts describe the historical pre-protocol candidate only."
+    },
+    "native_job_regressions": {
+      "status": "passed",
+      "test_count": 3,
+      "command": "python tests/catalog/test_job_cleanup.py"
     }
   },
-  "created_utc": "2026-10-17T08:35:41.654023+00:00",
+  "created_utc": "2026-10-17T08:48:16.786477+00:00",
   "source_hash_normalization": "CRLF normalized to LF"
 }
