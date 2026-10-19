@@ -16,6 +16,36 @@ chart. Chart pitch zero is C4/MIDI 60, per the [UltraStar format](https://usdx.e
 Pause, phrase changes and capture gaps clear stale connections. Rap/freestyle
 notes have no scientific pitch label.
 
+## Live chart readability
+
+The default singing view places a cyan time cursor over the existing target
+notes, with a brighter outlined pitch trail and a small live pitch marker.
+The line is colored by *pitch accuracy*, not awarded points:
+
+- **Mint:** within half a semitone of the target, including equivalent octaves.
+- **Amber:** outside that narrow band but still inside the selected player's
+  Easy/Medium/Hard scoring tolerance.
+- **Coral:** outside that tolerance.
+- **Pale blue:** singing between scored notes or during rap/freestyle passages.
+
+Silence draws no voice marker or connecting trail; the playhead remains visible
+for timing. Multiplayers retain independent lines and markers, and the colors
+are stored per trace point so later notes do not recolor historical samples.
+The scoring calculation, difficulty thresholds and F6/F7/F8 controls remain
+unchanged. Visual colors do not imply points on rap notes.
+
+The optional F8 readout now shows the sung note and actual frequency next to
+the target note and *target-relative* cents deviation (folded by the same
+octave convention as scoring). This avoids describing an entirely wrong
+target note as perfectly in tune merely because the singer hit another note
+exactly. The OpenGL renderer batches the trace into one quad draw per panel,
+reducing long-phrase draw-call overhead.
+
+Visual reference: [AllKaraoke](https://github.com/Asvarox/allkaraoke/tree/3224f9b67d4da2292058d6c28c9124926c566296),
+master at `3224f9b67d4da2292058d6c28c9124926c566296` (2026-10-18). We
+adapted the concept of immediate note-aligned visual feedback to WorldParty's
+existing OpenGL note lane; no AllKaraoke source or assets were copied.
+
 ## Shared detector and scoring
 
 Display and scoring use the same continuous YIN-style normalized-difference
@@ -58,6 +88,9 @@ capture path, channel remapping, reconnect, cache reuse and stale input.
 through the real capture path in the Windows SDL/OpenGL application. It checks
 actual score accumulation and captures singing screenshots, alongside search,
 download and restart tests. It uses dummy playback audio, not physical hardware.
+With `-NoFade`, the E2E runner additionally uses Pillow to assert mint/coral
+pixels in both singing screenshots for correct/wrong pitch and no phantom
+trace in silence/rap controls; this checks rendering rather than scoring alone.
 
 The [real-vocal benchmark](vocal-benchmark.md) uses isolated human singing and
 independent note/F0 annotations. Synthetic and recorded-audio tests cannot prove

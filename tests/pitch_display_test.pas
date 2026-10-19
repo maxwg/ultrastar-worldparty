@@ -11,6 +11,17 @@ begin
   Check(PitchName(69)='A4','concert A');
   Check(PitchName(68)='G#4','sharp');
   Check(PitchName(-1)='B-2','negative pitch');
+  Check(GradeDisplayPitch(69,69,2)=pfAccurate,'exact note is accurate');
+  Check(GradeDisplayPitch(81.4,69,2)=pfAccurate,'octave fold retains accurate color');
+  Check(GradeDisplayPitch(69.8,69,2)=pfOff,'hard wrong pitch is off');
+  Check(GradeDisplayPitch(69.8,69,1)=pfClose,'medium tolerated pitch is close');
+  Check(GradeDisplayPitch(71.1,69,0)=pfClose,'easy tolerated pitch is close');
+  Check(GradeDisplayPitch(71.6,69,0)=pfOff,'out of easy tolerance is off');
+  Check(DisplayPitchErrorCents(69,69)=0,'target note is zero cents');
+  Check(DisplayPitchErrorCents(81,69)=0,'octave-equivalent note is zero cents');
+  Check(DisplayPitchErrorCents(70.75,69)=175,'sharp by target-relative cents');
+  Check(DisplayPitchErrorCents(67.25,69)=-175,'flat by target-relative cents');
+  Check(DisplayPitchErrorCents(68.1,69)=-90,'near-note tuning uses target, not sung note');
   for K:=0 to 1 do begin
     Rate:=44100+K*3900;
     for J:=0 to 4 do begin

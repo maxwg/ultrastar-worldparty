@@ -46,6 +46,7 @@ foreach($test in @('library_search_index_test','text_input_events_test')) {
   if($LASTEXITCODE -ne 0){throw 'Search regression failed'}
 }
 $runArguments=@((Join-Path $PSScriptRoot 'run.py'),'--runtime',$runtime)
+if($NoFade){$runArguments+='--verify-pitch-visual'}
 if($CancelDownload){$runArguments+='--cancel-download'}
 if($PitchControl -ne 'normal'){$runArguments+=@('--pitch-control',$PitchControl)}
 & $PythonPath @runArguments

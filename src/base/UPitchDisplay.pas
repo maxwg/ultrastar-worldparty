@@ -4,6 +4,8 @@ unit UPitchDisplay;
 interface
 
 type
+  { Visual feedback only. Scoring continues to use PitchMatchesNote. }
+  TPitchFeedback = (pfNoTarget, pfAccurate, pfClose, pfOff);
   TPitchEstimate = record
     Valid, Voiced: Boolean;
     Hz, Midi, Volume, Confidence, RecentVolume: Double;
@@ -21,6 +23,8 @@ function ScoringPitch(const State: TPitchTracker; const Pitch: TPitchEstimate;
   Tick: Cardinal): TPitchEstimate;
 function FoldPitchToTarget(Midi, TargetMidi: Double): Double;
 function PitchMatchesNote(Midi, TargetMidi: Double; Difficulty: Integer): Boolean;
+function GradeDisplayPitch(Midi, TargetMidi: Double; Difficulty: Integer): TPitchFeedback;
+function DisplayPitchErrorCents(Midi, TargetMidi: Double): Integer;
 function EstimatePitch(const Samples: array of SmallInt; SampleRate: Double): TPitchEstimate;
 function PitchName(Midi: Integer): string;
 implementation
@@ -221,5 +225,24 @@ begin
     quantization margin. Hard remains strict; Easy/Medium keep their ranges. }
   Result := Abs(FoldPitchToTarget(Midi, TargetMidi)-TargetMidi) <=
     (2-EnsureRange(Difficulty, 0, 2)+0.5);
+end;
+
+function GradeDisplayPitch(Midi, TargetMidi: Double; Difficulty: Integer): TPitchFeedback;
+begin
+  { Accurate means within half a semitone; close means inside the selected
+    scoring tolerance. Never color a scoring hit as a miss. }
+  if Abs(FoldPitchToTarget(Midi, TargetMidi)-TargetMidi) <= 0.5 then
+    Result := pfAccurate
+  else if PitchMatchesNote(Midi, TargetMidi, Difficulty) then
+    Result := pfClose
+  else
+    Result := pfOff;
+end;
+
+function DisplayPitchErrorCents(Midi, TargetMidi: Double): Integer;
+begin
+  { Match the chart's octave folding: a singer an octave above the target
+    scores as in tune, but the pitch name/Hz still exposes the true octave. }
+  Result := Round(100*(FoldPitchToTarget(Midi, TargetMidi)-TargetMidi));
 end;
 end.

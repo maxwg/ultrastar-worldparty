@@ -124,6 +124,7 @@ type
   TPitchTracePoint = record
     Beat, Midi: Double;
     Valid: Boolean;
+    Feedback: TPitchFeedback;
   end;
   TPitchTrace = record
     Points: array[0..1023] of TPitchTracePoint;
@@ -164,12 +165,32 @@ begin
     Result := 60;
 end;
 
+{ Pitchless rap, freestyle and breaks are not errors in the visual feedback. }
+function ActivePitchTargetAtBeat(const Line: TLine; Beat: Double;
+  out TargetMidi: Double): Boolean;
+var
+  I: Integer;
+begin
+  Result := False;
+  TargetMidi := 60;
+  for I := 0 to Line.HighNote do
+    if (Line.Note[I].NoteType in [ntNormal, ntGolden]) and
+       (Line.Note[I].Start <= Beat) and
+       (Beat < Line.Note[I].Start + Line.Note[I].Length) then
+    begin
+      TargetMidi := Line.Note[I].Tone + 60;
+      Exit(True);
+    end;
+end;
+
 { Draw after every player's target/scoring bars, so overlays stay on top. }
 procedure DrawPitchOverlays;
 var
-  P, N, Cents, T: Integer;
-  Scale, PX, PY, RawPY, FoldedMidi, PreviousMidi, H, MinY, MaxY, TX, TY, TX2, TY2: Real;
+  P, N, Cents, T, Range, K: Integer;
+  Scale, PX, PY, RawPY, FoldedMidi, PreviousMidi, H, MinY, MaxY, TX, TY, TX2, TY2,
+    TargetMidi, R, G, B, Radius: Real;
   Estimate: TPitchEstimate;
+  Feedback: TPitchFeedback;
   LabelText: UTF8String;
 begin
   for P := 0 to PitchPanelCount-1 do
@@ -205,6 +226,15 @@ begin
          (Player < Length(AudioInputProcessor.Sound)) then
       begin
         Estimate := AudioInputProcessor.Sound[Player].RawPitch;
+        Feedback := pfNoTarget;
+        if Estimate.Valid and ActivePitchTargetAtBeat(
+           CurrentSong.Lines[Lines].Line[CurrentSong.Lines[Lines].Current],
+           LyricsState.MidBeatD, TargetMidi) then
+        begin
+          if ScreenSong.Mode = smNormal then Range := Ini.PlayerLevel[Player]
+          else Range := Ini.Difficulty;
+          Feedback := GradeDisplayPitch(Estimate.Midi, TargetMidi, Range);
+        end;
         with PitchTraces[Player] do
         begin
           if (LineStart <> Note[0].Start) or
@@ -224,6 +254,7 @@ begin
             Points[Count].Midi := FoldPitchToTarget(Estimate.Midi,
               PitchTargetAtBeat(CurrentSong.Lines[Lines].Line[CurrentSong.Lines[Lines].Current], LyricsState.MidBeatD));
             Points[Count].Valid := Estimate.Valid;
+            Points[Count].Feedback := Feedback;
             Inc(Count);
             LastTick := SDL_GetTicks;
           end;
@@ -237,11 +268,25 @@ begin
         RawPY := Y - (Estimate.Midi-60-BaseNote)*Space/2;
         MinY := Y-100;
         MaxY := Y+20;
-        H := 1.6;
+        H := 2.7;
         glDisable(GL_TEXTURE_2D);
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        glColor4f(0.8, 0.95, 1, 0.6);
+        { A fixed playhead makes timing legible even while the singer is silent.
+          Keep its translucent wash behind the live trace. }
+        glColor4f(0.35, 0.80, 1.0, 0.10);
+        glBegin(GL_QUADS);
+          glVertex2f(PX-4, MinY); glVertex2f(PX+4, MinY);
+          glVertex2f(PX+4, MaxY); glVertex2f(PX-4, MaxY);
+        glEnd;
+        glColor4f(0.76, 0.96, 1.0, 0.65);
+        glBegin(GL_LINES);
+          glVertex2f(PX, MinY); glVertex2f(PX, MaxY);
+        glEnd;
+        { Batch the whole trail into one GL_QUADS submission per panel.
+          Vertex colors may change inside glBegin; thousands of separate
+          glBegin/glEnd calls used to dominate longer phrases. }
+        glBegin(GL_QUADS);
         with PitchTraces[Player] do
         for T := 1 to Count-1 do
           if Points[T-1].Valid and Points[T].Valid then
@@ -256,30 +301,65 @@ begin
                (Abs(FoldedMidi-PreviousMidi) <= 7) and
                (TY >= MinY) and (TY <= MaxY) and (TY2 >= MinY) and (TY2 <= MaxY) then
             begin
-              glColor4f(0.05, 0.08, 0.12, 0.7);
-              glBegin(GL_QUADS);
-              glVertex2f(TX, TY-H/2-1);
-              glVertex2f(TX2, TY2-H/2-1);
-              glVertex2f(TX2, TY2+H/2+1);
-              glVertex2f(TX, TY+H/2+1);
-              glEnd;
-              glColor4f(1, 0.97, 0.78, 0.95);
-              glBegin(GL_QUADS);
+              case Points[T].Feedback of
+                pfAccurate: begin R := 0.35; G := 1.0; B := 0.66; end;
+                pfClose:    begin R := 1.0; G := 0.81; B := 0.34; end;
+                pfOff:      begin R := 1.0; G := 0.39; B := 0.45; end;
+                else        begin R := 0.72; G := 0.89; B := 1.0; end;
+              end;
+              { Dark edge separates a continuous colored voice trail from the
+                bright target-note textures. The inner stroke remains fixed
+                width at every pitch, rather than growing with volume. }
+              glColor4f(0.03, 0.06, 0.10, 0.88);
+              glVertex2f(TX, TY-H/2-1.5);
+              glVertex2f(TX2, TY2-H/2-1.5);
+              glVertex2f(TX2, TY2+H/2+1.5);
+              glVertex2f(TX, TY+H/2+1.5);
+              glColor4f(R, G, B, 0.98);
               glVertex2f(TX, TY-H/2);
               glVertex2f(TX2, TY2-H/2);
               glVertex2f(TX2, TY2+H/2);
               glVertex2f(TX, TY+H/2);
-              glEnd;
             end;
           end;
+        glEnd;
+        if Estimate.Valid and (PY >= MinY) and (PY <= MaxY) then
+        begin
+          case Feedback of
+            pfAccurate: begin R := 0.35; G := 1.0; B := 0.66; end;
+            pfClose:    begin R := 1.0; G := 0.81; B := 0.34; end;
+            pfOff:      begin R := 1.0; G := 0.39; B := 0.45; end;
+            else        begin R := 0.72; G := 0.89; B := 1.0; end;
+          end;
+          { Live pitch puck: larger halo + white-edged center, stationary at
+            the current time while the previous samples remain a trail. }
+          for K := 0 to 2 do
+          begin
+            case K of
+              0: begin Radius := 8; glColor4f(R, G, B, 0.20); end;
+              1: begin Radius := 4.5; glColor4f(0.02, 0.05, 0.09, 0.9); end;
+              else begin Radius := 3.0; glColor4f(R, G, B, 1.0); end;
+            end;
+            glBegin(GL_TRIANGLE_FAN);
+              glVertex2f(PX, PY);
+              for N := 0 to 16 do
+                glVertex2f(PX+Radius*Cos(N*Pi/8), PY+Radius*Sin(N*Pi/8));
+            glEnd;
+          end;
+        end;
         if (Ini.PitchReadout = 1) and Estimate.Valid then
         begin
-          Cents := Round((Estimate.Midi-Round(Estimate.Midi))*100);
           LabelText := PitchName(Round(Estimate.Midi)) + ' ' +
-            FormatFloat('0.0', Estimate.Hz) + ' Hz ' + IntToStr(Cents) + 'c';
+            FormatFloat('0.0', Estimate.Hz) + ' Hz';
+          if Feedback <> pfNoTarget then
+          begin
+            Cents := DisplayPitchErrorCents(Estimate.Midi, TargetMidi);
+            LabelText := LabelText + ' vs ' + PitchName(Round(TargetMidi)) +
+              ' ' + IntToStr(Cents) + 'c';
+          end;
           if RawPY < MinY then LabelText := LabelText + ' (above range)';
           if RawPY > MaxY then LabelText := LabelText + ' (below range)';
-          glColor4f(0.8, 0.95, 1, 0.75);
+          glColor4f(0.8, 0.95, 1.0, 0.9);
           SetFontPos(X+W+10*ScreenX-glTextWidth(LabelText), MaxY+3);
           glPrint(LabelText);
         end;
