@@ -458,7 +458,7 @@ begin
       OpenLibrarySearch('Fixture');
       Phase := 25;
     end;
-    25: if LibrarySearchTestSnapshot(Query, Selected, Rows, Remote, Busy, SignedIn) and LibrarySearchTestArtReady then begin
+    25: if LibrarySearchTestSnapshot(Query, Selected, Rows, Remote, Busy, SignedIn) and not Assigned(Display.NextScreen) and LibrarySearchTestArtReady then begin
       TargetLocal := LibrarySearchTestLocalIndex(2);
       if TargetLocal < 0 then Fail('card 2 is not a local song');
       ClickCard(399, 181);
