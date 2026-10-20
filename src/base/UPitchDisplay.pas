@@ -92,7 +92,7 @@ begin
   MinLag := Max(2, Floor(Rate / MaximumPitchHz)-1);
   MaxLag := Min(N div 2 - 1, Ceil(Rate / MinimumPitchHz)+1);
   if MaxLag <= MinLag then Exit;
-  Window := N - MaxLag;
+  Window := Min(1024, N - MaxLag);
 
   PrefSq[0] := 0;
   for I := 0 to N-1 do

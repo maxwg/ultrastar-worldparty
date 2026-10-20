@@ -180,7 +180,7 @@ type
 
     procedure Finish; virtual;
     procedure Pause; // toggle pause
-    procedure SkipIntro;
+    function SkipIntro: boolean;
     procedure UpdateMedleyStats(medley_end: boolean);
     procedure OnSentenceEnd(CP: integer; SentenceIndex: cardinal);     // for linebonus + singbar
     procedure OnSentenceChange(CP: integer; SentenceIndex: cardinal);  // for golden notes
@@ -206,7 +206,8 @@ uses
   UPathUtils,
   UUnicodeUtils,
   UWebcam,
-  UWebSDK;
+  UWebSDK,
+  ULastSongLog;
 
 const
   MAX_MESSAGE = 3;
@@ -375,9 +376,14 @@ begin
     // check special keys
     case PressedKey of
       SDLK_RETURN,
-      SDLK_KP_ENTER:
+      SDLK_KP_ENTER,
+      SDLK_SPACE:
       begin
-        SkipIntro;
+        if not SkipIntro then
+        begin
+          if PressedKey = SDLK_SPACE then
+            Pause;
+        end;
       end;
       SDLK_F6:
       begin
@@ -407,11 +413,6 @@ begin
         AudioPlayback.PlaySound(SoundLib.Back);
       end;
 
-      SDLK_SPACE:
-      begin
-        Pause;
-      end;
-
       SDLK_TAB: // change visualization preset
       begin
         if fShowVisualization then
@@ -429,11 +430,12 @@ begin
   end;
 end;
 
-procedure TScreenSingController.SkipIntro;
+function TScreenSingController.SkipIntro: boolean;
 var
   L, S, N, FirstBeat: Integer;
   FirstNoteTime, SkipTargetTime: Real;
 begin
+  Result := false;
   if (ScreenSong.Mode = smMedley) or Paused or (CurrentSong = nil) then Exit;
 
   FirstBeat := High(Integer);
@@ -453,12 +455,14 @@ begin
   if SkipTargetTime < 0.0 then
     SkipTargetTime := 0.0;
 
-  if AudioPlayback.Position < SkipTargetTime - 1.0 then
+  if AudioPlayback.Position < SkipTargetTime - 0.5 then
   begin
     AudioPlayback.SetPosition(SkipTargetTime);
     if Assigned(fCurrentVideo) then
       fCurrentVideo.Position := CurrentSong.VideoGAP + CurrentSong.Start + SkipTargetTime;
     LyricsState.SetCurrentTime(SkipTargetTime);
+    Log.LogStatus('Skipped intro to ' + FloatToStr(SkipTargetTime) + 's (first lyric at ' + FloatToStr(FirstNoteTime) + 's)', 'SkipIntro');
+    Result := true;
   end;
 end;
 
@@ -551,6 +555,14 @@ begin
 
   ClearSettings;
   Party.CallBeforeSing;
+
+  if Assigned(LastSongLog) then
+  begin
+    for I := 0 to High(AudioInputProcessor.Sound) do
+      if AudioInputProcessor.Sound[I] <> nil then
+        AudioInputProcessor.Sound[I].Clear();
+    LastSongLog.StartSession(CurrentSong);
+  end;
 
   // prepare players
   SetLength(Player, PlayersPlay);
@@ -1277,6 +1289,14 @@ end;
 
 procedure TScreenSingController.OnHide;
 begin
+  if Assigned(LastSongLog) and LastSongLog.SessionActive then
+  begin
+    if Length(Player) > 0 then
+      LastSongLog.FinishSession(Player[0].ScoreInt, Player[0].ScoreGoldenInt, Player[0].ScoreLineInt, Player[0].ScoreTotalInt)
+    else
+      LastSongLog.FinishSession(0, 0, 0, 0);
+  end;
+
   // background texture
   if Tex_Background.TexNum > 0 then
     UTexture.Texture.UnLoadTexture(Tex_Background);
@@ -1325,6 +1345,14 @@ begin
 
   // kill all stars and effects
   GoldenRec.KillAll;
+
+  if Assigned(LastSongLog) and LastSongLog.SessionActive then
+  begin
+    if Length(Player) > 0 then
+      LastSongLog.FinishSession(Player[0].ScoreInt, Player[0].ScoreGoldenInt, Player[0].ScoreLineInt, Player[0].ScoreTotalInt)
+    else
+      LastSongLog.FinishSession(0, 0, 0, 0);
+  end;
 
   if (Ini.SavePlayback = 1) then
   begin

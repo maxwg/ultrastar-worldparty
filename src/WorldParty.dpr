@@ -158,6 +158,7 @@ uses
   USkins            in 'base\USkins.pas',
   UThemes           in 'base\UThemes.pas',
   ULog              in 'base\ULog.pas',
+  ULastSongLog      in 'base\ULastSongLog.pas',
   UJoystick         in 'base\UJoystick.pas',
   UDataBase         in 'base\UDataBase.pas',
   UCatCovers        in 'base\UCatCovers.pas',

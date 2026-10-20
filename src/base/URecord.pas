@@ -373,14 +373,12 @@ begin
     UnlockAnalysisBuffer();
   end;
 
-  // save capture-data to BufferLong if enabled
-  if (Ini.SavePlayback = 1) then
+  // save capture-data to LogBuffer if enabled or for last-song debug package
+  if (Ini.SavePlayback = 1) or True then
   begin
-    // this is just for debugging (approx 15MB per player for a 3min song!!!)
-    // For an in-game replay-mode we need to compress data so we do not
-    // waste that much memory. Maybe ogg-vorbis with voice-preset in fast-mode?
-    // Or we could use a faster but not that efficient lossless compression.
-    LogBuffer.Write(Buffer^, BufferSize);
+    // Keep up to 30MB of audio buffer (~5.5 minutes of 44.1kHz mono 16-bit PCM)
+    if LogBuffer.Size < 30 * 1024 * 1024 then
+      LogBuffer.Write(Buffer^, BufferSize);
   end;
 end;
 

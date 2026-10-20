@@ -158,7 +158,8 @@ uses
   USkins,
   USongs,
   UThemes,
-  UPitchDisplay;
+  UPitchDisplay,
+  ULastSongLog;
 
 function GetTimeForBeats(BPM, Beats: real): real;
 begin
@@ -598,6 +599,11 @@ begin
 
         { Once a note ends, a subsequent matching pitch cannot prove that it
           was sung. Do not award whole short notes after their scoring window. }
+
+        if (PlayerIndex = 0) and Assigned(LastSongLog) and LastSongLog.SessionActive then
+        begin
+          LastSongLog.LogBeat(LyricsState.GetCurrentTime(), ActualBeat, MatchedLineFragment, CurrentSound, NoteHit, BackfillCount);
+        end;
       end;
     end; // for PlayerIndex
   end; // for ActualBeat
