@@ -25,6 +25,8 @@ function FoldPitchToTarget(Midi, TargetMidi: Double): Double;
 function PitchMatchesNote(Midi, TargetMidi: Double; Difficulty: Integer): Boolean;
 function GradeDisplayPitch(Midi, TargetMidi: Double; Difficulty: Integer): TPitchFeedback;
 function DisplayPitchErrorCents(Midi, TargetMidi: Double): Integer;
+function OnsetBackfillBeats(BPM: Double; NoteLength, DelayBeats: Integer;
+  EarlierWrongPitch: Boolean): Integer;
 function EstimatePitch(const Samples: array of SmallInt; SampleRate: Double): TPitchEstimate;
 function PitchName(Midi: Integer): string;
 implementation
@@ -45,9 +47,11 @@ end;
 
 function EstimatePitch(const Samples: array of SmallInt; SampleRate: Double): TPitchEstimate;
 var
-  Data, Difference: array[0..MaximumAnalysisSamples-1] of Double;
-  I, J, N, Step, Offset, MinLag, MaxLag, Lag, Best, Window, Recent: Integer;
-  Sum, Delta, Energy, Mean, Rate, Period, Denom: Double;
+  Data, Difference, NSDF: array[0..MaximumAnalysisSamples-1] of Double;
+  { The prefix array includes the initial zero and N accumulated samples. }
+  PrefSq: array[0..MaximumAnalysisSamples] of Double;
+  I, J, N, Step, Offset, MinLag, MaxLag, Lag, Best, BestYIN, BestMPM, Window, Recent: Integer;
+  Sum, Delta, Energy, Norm, Mean, Rate, Period, Denom, MaxPeak, MPMThreshold: Double;
 begin
   FillChar(Result, SizeOf(Result), 0);
   if IsNan(SampleRate) or IsInfinite(SampleRate) then Exit;
@@ -83,15 +87,21 @@ begin
   { Remove the recent window's own DC offset. The older voiced window's mean
     must not make a newly silent microphone look loud enough to keep scoring. }
   Result.RecentVolume := Sqrt(Max(0, Energy / Recent - Sqr(Sum / Recent)));
-  if (Result.Volume < 0.001) or (Result.RecentVolume < 0.001) then Exit;
+  if (Result.Volume < 0.0008) or (Result.RecentVolume < 0.0008) then Exit;
   { Search one neighbor beyond the range for boundary interpolation. }
   MinLag := Max(2, Floor(Rate / MaximumPitchHz)-1);
   MaxLag := Min(N div 2 - 1, Ceil(Rate / MinimumPitchHz)+1);
   if MaxLag <= MinLag then Exit;
   Window := N - MaxLag;
+
+  PrefSq[0] := 0;
+  for I := 0 to N-1 do
+    PrefSq[I+1] := PrefSq[I] + Sqr(Data[I]);
+
   Difference[0] := 1;
+  NSDF[0] := 1;
   Sum := 0;
-  { YIN cumulative mean normalized difference, first strong local minimum. }
+  { Joint computation: YIN difference + MPM Normalized Square Difference }
   for Lag := 1 to MaxLag do
   begin
     Energy := 0;
@@ -103,34 +113,100 @@ begin
     Sum := Sum + Energy;
     if Sum > 1e-15 then Difference[Lag] := Energy * Lag / Sum
     else Difference[Lag] := 1;
+
+    Norm := (PrefSq[Window] - PrefSq[0]) + (PrefSq[Lag+Window] - PrefSq[Lag]);
+    if Norm > 1e-12 then NSDF[Lag] := 1.0 - Energy / Norm
+    else NSDF[Lag] := 0;
   end;
-  Best := 0;
+
+  { 1. McLeod Pitch Method (MPM) peak picking:
+       Find the highest positive peak, then pick the first peak >= 0.80 * MaxPeak.
+       This avoids octave halving (picking 2*tau) while remaining robust to noise. }
+  MaxPeak := -1.0;
+  for Lag := MinLag to MaxLag-1 do
+    if (NSDF[Lag] > 0) and (NSDF[Lag] > NSDF[Lag-1]) and (NSDF[Lag] >= NSDF[Lag+1]) then
+      if NSDF[Lag] > MaxPeak then MaxPeak := NSDF[Lag];
+
+  BestMPM := 0;
+  if MaxPeak > 0.35 then
+  begin
+    MPMThreshold := 0.80 * MaxPeak;
+    for Lag := MinLag to MaxLag-1 do
+      if (NSDF[Lag] >= MPMThreshold) and (NSDF[Lag] > NSDF[Lag-1]) and (NSDF[Lag] >= NSDF[Lag+1]) then
+      begin
+        BestMPM := Lag;
+        Break;
+      end;
+  end;
+
+  { 2. YIN cumulative mean normalized difference minimum:
+       First local minimum below 0.15 threshold. }
+  BestYIN := 0;
   Lag := MinLag;
   while Lag < MaxLag do
   begin
     if Difference[Lag] < 0.15 then
     begin
       while (Lag < MaxLag) and (Difference[Lag+1] < Difference[Lag]) do Inc(Lag);
-      Best := Lag;
+      BestYIN := Lag;
       Break;
     end;
     Inc(Lag);
   end;
-  if Best = 0 then
+  if BestYIN = 0 then
   begin
-    Best := MinLag + 1;
+    BestYIN := MinLag + 1;
     for Lag := MinLag+2 to MaxLag-1 do
-      if Difference[Lag] < Difference[Best] then Best := Lag;
-    if Difference[Best] > 0.22 then Exit;
+      if Difference[Lag] < Difference[BestYIN] then BestYIN := Lag;
   end;
+
+  { 3. Decision fusion:
+       Combine YIN and MPM to prevent octave errors and sustain notes through
+       breathy, soft or vibrato sections where either single detector would drop out. }
+  Best := 0;
+  if (BestYIN > 0) and (Difference[BestYIN] <= 0.20) then
+  begin
+    Best := BestYIN;
+    { Check if YIN was an octave double of MPM's first prominent peak }
+    if (BestMPM > 0) and (NSDF[BestMPM] >= 0.55) and (Abs(BestYIN - 2*BestMPM) <= 2) then
+      Best := BestMPM;
+  end
+  else if (BestMPM > 0) and (NSDF[BestMPM] >= 0.45) then
+  begin
+    { MPM rescues borderline YIN frames (Difference 0.15-0.38) }
+    Best := BestMPM;
+  end
+  else if (BestYIN > 0) and (Difference[BestYIN] <= 0.32) then
+  begin
+    Best := BestYIN;
+  end;
+
   if (Best <= MinLag) or (Best >= MaxLag) then Exit;
+
+  { Parabolic interpolation around the selected peak for sub-sample accuracy }
   Period := Best;
-  Denom := Difference[Best-1] - 2*Difference[Best] + Difference[Best+1];
-  if Abs(Denom) > 1e-12 then
-    Period := Period + EnsureRange(0.5*(Difference[Best-1]-Difference[Best+1])/Denom, -0.5, 0.5);
+  if (Best = BestMPM) and (Best > MinLag) and (Best < MaxLag) then
+  begin
+    Denom := NSDF[Best-1] - 2*NSDF[Best] + NSDF[Best+1];
+    if Abs(Denom) > 1e-12 then
+      Period := Period + EnsureRange(0.5*(NSDF[Best-1] - NSDF[Best+1]) / Denom, -0.5, 0.5);
+  end
+  else if (Best > MinLag) and (Best < MaxLag) then
+  begin
+    Denom := Difference[Best-1] - 2*Difference[Best] + Difference[Best+1];
+    if Abs(Denom) > 1e-12 then
+      Period := Period + EnsureRange(0.5*(Difference[Best-1] - Difference[Best+1]) / Denom, -0.5, 0.5);
+  end;
+
   Result.Hz := Rate / Period;
   Result.Midi := 69 + 12 * Ln(Result.Hz/440) / Ln(2);
-  Result.Confidence := 1 - Difference[Best];
+  if Best = BestMPM then
+    Result.Confidence := Max(0.0, Min(1.0, NSDF[BestMPM]))
+  else
+    Result.Confidence := Max(0.0, Min(1.0, 1.0 - Difference[BestYIN]));
+  if (BestMPM > 0) and (Abs(BestYIN - BestMPM) <= 2) then
+    Result.Confidence := Max(Result.Confidence, 0.95);
+
   Result.Valid := (Result.Hz >= MinimumPitchHz) and (Result.Hz <= MaximumPitchHz);
   Result.Voiced := Result.Valid;
 end;
@@ -203,8 +279,8 @@ function ScoringPitch(const State: TPitchTracker; const Pitch: TPitchEstimate;
   Tick: Cardinal): TPitchEstimate;
 begin
   Result := Pitch;
-  { Only a short unvoiced gap may be bridged. UNote additionally requires the
-    same already-hit chart note; silence at an onset cannot earn points. }
+  { A rejected *voiced* wrong pitch is not silence. Bridging it with the last
+    accepted note can turn a pitch change into a false scoring hit. }
   if not Result.Valid and not Result.Voiced and State.Initialized and
      (Cardinal(Tick-State.LastVoicedTick) <= 60) then
   begin
@@ -244,5 +320,19 @@ begin
   { Match the chart's octave folding: a singer an octave above the target
     scores as in tune, but the pitch name/Hz still exposes the true octave. }
   Result := Round(100*(FoldPitchToTarget(Midi, TargetMidi)-TargetMidi));
+end;
+
+function OnsetBackfillBeats(BPM: Double; NoteLength, DelayBeats: Integer;
+  EarlierWrongPitch: Boolean): Integer;
+var
+  MaxBeats: Integer;
+begin
+  Result := 0;
+  { Never infer an entire missed note from later notes, and never overwrite
+    a genuinely wrong earlier pitch. Beat duration is 60/BPM seconds. }
+  if EarlierWrongPitch or IsNan(BPM) or IsInfinite(BPM) or (BPM <= 0) or
+     (DelayBeats < 1) or (DelayBeats >= NoteLength) then Exit;
+  MaxBeats := Min(2, Floor(0.180 * BPM / 60.0 + 1e-9));
+  if DelayBeats <= MaxBeats then Result := DelayBeats;
 end;
 end.

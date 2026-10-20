@@ -1715,12 +1715,15 @@ var
 begin
   Result := true;
   if (AutoPlayFolder <> '') and not Assigned(Display.NextScreen) then begin
+    Log.LogStatus('Checking AutoPlayFolder: ' + AutoPlayFolder, 'ScreenSong.Draw');
     for I := 0 to High(CatSongs.Song) do
-      if not CatSongs.Song[I].Main and
+      if not CatSongs.Song[I].Main and (CatSongs.Song[I].Path <> nil) and
          SameFileName(ExcludeTrailingPathDelimiter(CatSongs.Song[I].Path.ToNative),
                       ExcludeTrailingPathDelimiter(AutoPlayFolder)) then begin
+        Log.LogStatus('Found downloaded song at index ' + IntToStr(I) + ', starting song...', 'ScreenSong.Draw');
         AutoPlayFolder := ''; SetSubselection(); SkipTo(I, true); StartSong; Exit;
       end;
+    Log.LogWarn('AutoPlayFolder ' + AutoPlayFolder + ' not found in active song list (' + IntToStr(Length(CatSongs.Song)) + ' songs)', 'ScreenSong.Draw');
     AutoPlayFolder := '';
     UGraphic.ScreenPopupError.ShowPopup('Downloaded song could not be loaded. Check its chart and media.');
   end;

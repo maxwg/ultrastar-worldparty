@@ -1,14 +1,16 @@
 # Pitch and microphone feedback
 
-The thin, stable pitch trace is **On by default**. It replaces the thick sung
-bars while retaining the target notes. It follows fractional pitch rather than
-snapping to a target; octave folding matches UltraStar's scoring convention.
+The continuous, stable pitch trace is **On by default**. It renders smoothly
+above the traditional UltraStar sung bars and target notes. It follows fractional
+pitch rather than snapping to a target; octave folding matches UltraStar's scoring
+convention.
 A fixed width, contrasting outline, short smoothing filter and rejection of
 single-frame octave glitches keep it readable. Unvoiced passages break the line.
 
 - **F6 / NoteNames:** target note labels (C4, G#4).
-- **F7 / DetectedPitch:** thin trace; Off restores the original sung bars.
+- **F7 / DetectedPitch:** continuous pitch trace and playhead; rendered above the traditional scoring bars. Off hides the continuous trace overlay.
 - **F8 / PitchReadout:** optional true sung note, Hz and cents. Off by default.
+- **Enter / S:** skip intro silence to 5 seconds before the first actual voice note.
 
 These switches persist under `[Advanced]` and are available in Options → Advanced.
 The readout keeps the actual sung octave even when the trace is folded to the
@@ -46,15 +48,38 @@ master at `3224f9b67d4da2292058d6c28c9124926c566296` (2026-10-18). We
 adapted the concept of immediate note-aligned visual feedback to WorldParty's
 existing OpenGL note lane; no AllKaraoke source or assets were copied.
 
+## Onset latency backfilling
+
+Microphone buffers, capture drivers and continuous pitch estimators require a
+short window of voiced audio before pitch stabilizes. To avoid penalizing this
+startup delay, a *bounded scoring concession* credits up to 180 ms (at most
+two whole chart beats) when the first matching pitch arrives within the same
+note. It never credits a note that has already ended, never retroactively
+replaces a recorded wrong pitch, and does not extend the microphone's actual
+physical capture window. At low chart BPM, an entire beat exceeds 180 ms, so
+no beat is backfilled. In Advanced → Debug mode, successful concessions are
+logged with player, beat, credited beats and chart BPM.
+
+This is not a measured hardware latency correction. The pitch display remains
+the actual detected signal, not a reconstructed/snap-to-target trace.
+
 ## Shared detector and scoring
 
 Display and scoring use the same continuous YIN-style normalized-difference
-estimator with sub-sample interpolation. Its source is the original
-[YIN method](https://doi.org/10.1121/1.1458024). Analysis updates at most every
+estimator with an MPM normalized-square-difference candidate and sub-sample
+interpolation. YIN's original method is described in
+[this paper](https://doi.org/10.1121/1.1458024). Analysis updates at most every
 20 ms when fresh PCM is available, independently of score beats. Repeated calls
 reuse the result. The capture mutex protects only a short PCM snapshot, never DSP.
 Bounded, decimated analysis uses fixed scratch arrays rather than per-frame
 allocations. The input window remains the newest 4096 samples.
+
+In a deterministic 44.1 kHz synthetic-A4 onset test, pitch becomes valid in
+40 ms after fresh microphone frames begin; this does **not** include capture
+driver, audio-device or playback synchronization delays. The MPM/YIN fusion
+improved Easy note-frame matching from 60.0% to 61.8% on one local recorded-
+vocal development clip, at roughly 3 s analysis versus 2 s for YIN alone.
+This is a single-clip comparison, not a new general accuracy benchmark.
 
 Easy remains the default. The traditional Easy/Medium/Hard tolerances are
 preserved, including the half-semitone quantization margin. Brief unvoiced gaps

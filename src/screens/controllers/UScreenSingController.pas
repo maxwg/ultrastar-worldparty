@@ -180,6 +180,7 @@ type
 
     procedure Finish; virtual;
     procedure Pause; // toggle pause
+    procedure SkipIntro;
     procedure UpdateMedleyStats(medley_end: boolean);
     procedure OnSentenceEnd(CP: integer; SentenceIndex: cardinal);     // for linebonus + singbar
     procedure OnSentenceChange(CP: integer; SentenceIndex: cardinal);  // for golden notes
@@ -366,18 +367,18 @@ begin
       // skip intro
       Ord('S'):
       begin
-        if (AudioPlayback.Position < CurrentSong.gap / 1000 - 6) then
-        begin
-          AudioPlayback.SetPosition(CurrentSong.gap / 1000.0 - 5.0);
-            if (Assigned(fCurrentVideo)) then
-               fCurrentVideo.Position := CurrentSong.VideoGAP + CurrentSong.Start + (CurrentSong.gap / 1000.0 - 5.0);
-        end;
+        SkipIntro;
         Exit;
       end;
     end;
 
     // check special keys
     case PressedKey of
+      SDLK_RETURN,
+      SDLK_KP_ENTER:
+      begin
+        SkipIntro;
+      end;
       SDLK_F6:
       begin
         Ini.NoteNames := 1 - Ini.NoteNames;
@@ -425,6 +426,39 @@ begin
         end;
       end;
     end;
+  end;
+end;
+
+procedure TScreenSingController.SkipIntro;
+var
+  L, S, N, FirstBeat: Integer;
+  FirstNoteTime, SkipTargetTime: Real;
+begin
+  if (ScreenSong.Mode = smMedley) or Paused or (CurrentSong = nil) then Exit;
+
+  FirstBeat := High(Integer);
+  for L := 0 to High(CurrentSong.Lines) do
+    for S := 0 to CurrentSong.Lines[L].High do
+      for N := 0 to CurrentSong.Lines[L].Line[S].HighNote do
+        if (CurrentSong.Lines[L].Line[S].Note[N].NoteType <> ntFreestyle) and
+           (CurrentSong.Lines[L].Line[S].Note[N].Start < FirstBeat) then
+          FirstBeat := CurrentSong.Lines[L].Line[S].Note[N].Start;
+
+  if FirstBeat = High(Integer) then
+    FirstNoteTime := CurrentSong.GAP / 1000.0
+  else
+    FirstNoteTime := GetTimeFromBeat(FirstBeat, CurrentSong);
+
+  SkipTargetTime := FirstNoteTime - 5.0;
+  if SkipTargetTime < 0.0 then
+    SkipTargetTime := 0.0;
+
+  if AudioPlayback.Position < SkipTargetTime - 1.0 then
+  begin
+    AudioPlayback.SetPosition(SkipTargetTime);
+    if Assigned(fCurrentVideo) then
+      fCurrentVideo.Position := CurrentSong.VideoGAP + CurrentSong.Start + SkipTargetTime;
+    LyricsState.SetCurrentTime(SkipTargetTime);
   end;
 end;
 

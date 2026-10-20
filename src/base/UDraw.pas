@@ -838,7 +838,6 @@ begin
     PitchPanels[PitchPanelCount].Space := Space;
     Inc(PitchPanelCount);
   end;
-  if Ini.DetectedPitch = 1 then Exit;
   Rec.Right := 0;
   Rec.Left := 0;
   Rec.Top := 0;
@@ -861,6 +860,10 @@ begin
 
   //if Player[NrGracza].LengthNote > 0 then
   begin
+    if (CurrentSong = nil) or
+       (CurrentSong.Lines[NrLines].Line[CurrentSong.Lines[NrLines].Current].HighNote < 0) or
+       (Length(CurrentSong.Lines[NrLines].Line[CurrentSong.Lines[NrLines].Current].Note) = 0) then Exit;
+
     if not CurrentSong.Lines[NrLines].Line[CurrentSong.Lines[NrLines].Current].HasLength(TempR) then TempR := 0
     else TempR := W / TempR;
 

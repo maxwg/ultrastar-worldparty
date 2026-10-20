@@ -883,7 +883,9 @@ begin
     if (DeviceUsed) then
     begin
       //Log.BenchmarkStart(2);
-      Device.Start();
+      if not Device.Start() then
+        Log.LogError('Unable to start assigned microphone: ' + Device.Name,
+          'TAudioInputBase.CaptureStart');
       //Log.BenchmarkEnd(2);
       //Log.LogBenchmark('Device.Start', 2) ;
     end;

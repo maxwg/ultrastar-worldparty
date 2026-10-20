@@ -380,6 +380,8 @@ var
   MaxSongPoints:       integer; // max. points for the song (without line bonus)
   CurNotePoints:       real;    // Points for the cur. Note (PointsperNote * ScoreFactor[CurNote])
   CurrentNoteType:     TNoteType;
+  BackfillCount:       integer;
+  MatchedLineFragment: PLineFragment;
 begin
   ActualTone := 0;
   NoteHit := false;
@@ -405,6 +407,7 @@ begin
         NoteAvailable := false;
         RapAvailable := false;
         SentenceDetected := SentenceMin;
+        MatchedLineFragment := nil;
         for SentenceIndex := SentenceMin to SentenceMax do
         begin
           Line := @CurrentSong.Lines[CP].Line[SentenceIndex];
@@ -418,16 +421,13 @@ begin
               (CurrentLineFragment.Length > 0) then                   // and make sure the note length is at least 1
             begin
               SentenceDetected := SentenceIndex;
+              MatchedLineFragment := CurrentLineFragment;
               NoteAvailable := true;
               RapAvailable := CurrentLineFragment.NoteType in [ntRap, ntRapGolden];
               Break;
             end;
           end;
-          // TODO: break here, if NoteAvailable is true? We would then use the first instead
-          // of the last note matching the current beat if notes overlap. But notes
-          // should not overlap at all.
-          //if (NoteAvailable) then
-          //  Break;
+          if NoteAvailable then Break;
         end;
 
         CurrentPlayer := @Player[PlayerIndex];
@@ -441,113 +441,107 @@ begin
 
         // analyze buffer
         CurrentSound.AnalyzeBuffer;
-
-        // add some noise
-        // TODO: do we need this?
-        //LyricsState.Tone := LyricsState.Tone + Round(Random(3)) - 1;
+        { Never carry a backfill count from another beat or player. }
+        BackfillCount := 0;
 
         // add note if possible
-        if (NoteAvailable and
+        if (NoteAvailable and (MatchedLineFragment <> nil) and
             (CurrentSound.ToneValid or CurrentSound.ScorePitch.Valid or
              (CurrentSound.VoiceActive and RapAvailable))) then
         begin
-          CurrentNoteType := ntNormal;
+          CurrentLineFragment := MatchedLineFragment;
+          CurrentNoteType := CurrentLineFragment.NoteType;
           Line := @CurrentSong.Lines[CP].Line[SentenceDetected];
-          // process until last note
-          for LineFragmentIndex := 0 to Line.HighNote do
+
+          ActualTone := Round(FoldPitchToTarget(CurrentSound.ScorePitch.Midi,
+            CurrentLineFragment.Tone+60))-60;
+          if (ScreenSong.Mode = smNormal) then
+            Range := Ini.PlayerLevel[PlayerIndex]
+          else
+            Range := Ini.Difficulty;
+          NoteHit := False;
+          { Pitch policy is shared with the real-vocal benchmark. A brief
+            unvoiced dropout only counts inside the same already-hit note. }
+          if ((CurrentLineFragment.NoteType in [ntRap, ntRapGolden]) and
+              CurrentSound.VoiceActive) or
+             (CurrentSound.ScorePitch.Valid and
+              PitchMatchesNote(CurrentSound.ScorePitch.Midi,
+               CurrentLineFragment.Tone+60, Range) and
+              (CurrentSound.ToneValid or
+               ((LastPlayerNote <> nil) and LastPlayerNote.Hit and
+                (LastPlayerNote.Start >= CurrentLineFragment.Start) and
+                (LastPlayerNote.Start+LastPlayerNote.Length = ActualBeat)))) then
           begin
-            CurrentLineFragment := @Line.Note[LineFragmentIndex];
-            if (CurrentLineFragment.Start <= ActualBeat) and
-              (CurrentLineFragment.Start + CurrentLineFragment.Length > ActualBeat) then
-            begin
-              // set the current note type
-              CurrentNoteType := CurrentLineFragment.NoteType;
-              // compare notes (from song-file and from player)
+            ActualTone := CurrentLineFragment.Tone;
+            NoteHit := true;
 
-              ActualTone := Round(FoldPitchToTarget(CurrentSound.ScorePitch.Midi,
-                CurrentLineFragment.Tone+60))-60;
-              if (ScreenSong.Mode = smNormal) then
-                Range := Ini.PlayerLevel[PlayerIndex]
-              else
-                Range := Ini.Difficulty;
-              NoteHit := False;
-              { Pitch policy is shared with the real-vocal benchmark. A brief
-                unvoiced dropout only counts inside the same already-hit note. }
-              if ((CurrentLineFragment.NoteType in [ntRap, ntRapGolden]) and
-                  CurrentSound.VoiceActive) or
-                 (CurrentSound.ScorePitch.Valid and
-                  PitchMatchesNote(CurrentSound.ScorePitch.Midi,
-                   CurrentLineFragment.Tone+60, Range) and
-                  (CurrentSound.ToneValid or
-                   ((LastPlayerNote <> nil) and LastPlayerNote.Hit and
-                    (LastPlayerNote.Start >= CurrentLineFragment.Start) and
-                    (LastPlayerNote.Start+LastPlayerNote.Length = ActualBeat)))) then
-              begin
-                // adjust the players tone to the correct one
-                // TODO: do we need to do this?
-                // Philipp: I think we do, at least when we draw the notes.
-                //          Otherwise the notehit thing would be shifted to the
-                //          correct unhit note. I think this will look kind of strange.
-                ActualTone := CurrentLineFragment.Tone;
+            { Credit no more than 180ms after a newly detected onset. If an
+              earlier unhit pitch exists *inside this note*, that is evidence
+              against backfilling it; we must not rewrite wrong singing. }
+            if (LastPlayerNote = nil) or
+               (LastPlayerNote.Start + LastPlayerNote.Length <= CurrentLineFragment.Start) then
+              BackfillCount := OnsetBackfillBeats(CurrentSong.BPM,
+                CurrentLineFragment.Length, ActualBeat-CurrentLineFragment.Start,
+                False);
+            if (BackfillCount > 0) and (Ini.Debug = 1) then
+              Log.LogInfo(Format('player=%d beat=%d onset_beats=%d bpm=%.1f',
+                [PlayerIndex+1, ActualBeat, BackfillCount, CurrentSong.BPM]),
+                'PitchOnsetGrace');
 
-                // half size notes patch
-                NoteHit := true;
+            if (Ini.LineBonus > 0) then
+              MaxSongPoints := MAX_SONG_SCORE - MAX_SONG_LINE_BONUS
+            else
+              MaxSongPoints := MAX_SONG_SCORE;
 
-                if (Ini.LineBonus > 0) then
-                  MaxSongPoints := MAX_SONG_SCORE - MAX_SONG_LINE_BONUS
-                else
-                  MaxSongPoints := MAX_SONG_SCORE;
+            CurNotePoints := (MaxSongPoints / CurrentSong.Lines[CP].ScoreValue) * ScoreFactor[CurrentLineFragment.NoteType];
 
-                // Note: ScoreValue is the sum of all note values of the song
-                // (MaxSongPoints / ScoreValue) is the points that a player
-                // gets for a hit of one beat of a normal note
-                // CurNotePoints is the amount of points that is meassured
-                // for a hit of the note per full beat
-                CurNotePoints := (MaxSongPoints / CurrentSong.Lines[CP].ScoreValue) * ScoreFactor[CurrentLineFragment.NoteType];
+            case CurrentLineFragment.NoteType of
+              ntNormal:    CurrentPlayer.Score       := CurrentPlayer.Score       + CurNotePoints * (1 + BackfillCount);
+              ntGolden:    CurrentPlayer.ScoreGolden := CurrentPlayer.ScoreGolden + CurNotePoints * (1 + BackfillCount);
+              ntRap:       CurrentPlayer.Score       := CurrentPlayer.Score       + CurNotePoints * (1 + BackfillCount);
+              ntRapGolden: CurrentPlayer.ScoreGolden := CurrentPlayer.ScoreGolden + CurNotePoints * (1 + BackfillCount);
+            end;
 
-                case CurrentLineFragment.NoteType of
-                  ntNormal:    CurrentPlayer.Score       := CurrentPlayer.Score       + CurNotePoints;
-                  ntGolden:    CurrentPlayer.ScoreGolden := CurrentPlayer.ScoreGolden + CurNotePoints;
-                  ntRap:       CurrentPlayer.Score       := CurrentPlayer.Score       + CurNotePoints;
-                  ntRapGolden: CurrentPlayer.ScoreGolden := CurrentPlayer.ScoreGolden + CurNotePoints;
-                end;
+            CurrentPlayer.ScoreInt := round(CurrentPlayer.Score / 10) * 10;
 
-                // a problem if we use floor instead of round is that a score of
-                // 10000 points is only possible if the last digit of the total points
-                // for golden and normal notes is 0.
-                // if we use round, the max score is 10000 for most songs
-                // but a score of 10010 is possible if the last digit of the total
-                // points for golden and normal notes is 5
-                // the best solution is to use round for one of these scores
-                // and round the other score in the opposite direction
-                // so we assure that the highest possible score is 10000 in every case.
-                CurrentPlayer.ScoreInt := round(CurrentPlayer.Score / 10) * 10;
+            if (CurrentPlayer.ScoreInt < CurrentPlayer.Score) then
+              CurrentPlayer.ScoreGoldenInt := ceil(CurrentPlayer.ScoreGolden / 10) * 10
+            else
+              CurrentPlayer.ScoreGoldenInt := floor(CurrentPlayer.ScoreGolden / 10) * 10;
 
-                if (CurrentPlayer.ScoreInt < CurrentPlayer.Score) then
-                  //normal score is floored so we have to ceil golden notes score
-                  CurrentPlayer.ScoreGoldenInt := ceil(CurrentPlayer.ScoreGolden / 10) * 10
-                else
-                  //normal score is ceiled so we have to floor golden notes score
-                  CurrentPlayer.ScoreGoldenInt := floor(CurrentPlayer.ScoreGolden / 10) * 10;
-
-
-                CurrentPlayer.ScoreTotalInt := CurrentPlayer.ScoreInt +
-                                               CurrentPlayer.ScoreGoldenInt +
-                                               CurrentPlayer.ScoreLineInt;
-              end;
-            end; // operation
-          end; // for
+            CurrentPlayer.ScoreTotalInt := CurrentPlayer.ScoreInt +
+                                           CurrentPlayer.ScoreGoldenInt +
+                                           CurrentPlayer.ScoreLineInt;
+          end;
 
           // check if we have to add a new note or extend the note's length
           if (SentenceDetected = SentenceMax) and
              (CurrentSound.ToneValid or CurrentSound.ScorePitch.Valid or
               (CurrentSound.VoiceActive and (CurrentNoteType in [ntRap, ntRapGolden]))) then
           begin
+            if BackfillCount > 0 then
+            begin
+              { Prune any unhit onset fragments that were recorded during backfilled beats }
+              while (CurrentPlayer.HighNote >= 0) and
+                    (CurrentPlayer.Note[CurrentPlayer.HighNote].Start >= CurrentLineFragment.Start) and
+                    (not CurrentPlayer.Note[CurrentPlayer.HighNote].Hit) do
+              begin
+                Dec(CurrentPlayer.HighNote);
+                Dec(CurrentPlayer.LengthNote);
+                SetLength(CurrentPlayer.Note, CurrentPlayer.LengthNote);
+              end;
+              if CurrentPlayer.HighNote >= 0 then
+                LastPlayerNote := @CurrentPlayer.Note[CurrentPlayer.HighNote]
+              else
+                LastPlayerNote := nil;
+            end;
+
             // we will add a new note
             NewNote := true;
 
             // if previous note (if any) was the same, extend previous note
-            if ((CurrentPlayer.LengthNote > 0) and
+            if (BackfillCount = 0) and
+               ((CurrentPlayer.LengthNote > 0) and
                 (LastPlayerNote <> nil) and
                 (LastPlayerNote.Tone = ActualTone) and
                 ((LastPlayerNote.Start + LastPlayerNote.Length) = ActualBeat)) then
@@ -555,54 +549,55 @@ begin
               NewNote := false;
             end;
 
-            // if is not as new note to control
-            for LineFragmentIndex := 0 to Line.HighNote do
-            begin
-              if (Line.Note[LineFragmentIndex].Start = ActualBeat) then
-                NewNote := true;
-            end;
+            // if note starts on ActualBeat, always start a new player note
+            if (BackfillCount = 0) and (CurrentLineFragment.Start = ActualBeat) then
+              NewNote := true;
 
             // add new note
             if NewNote then
             begin
-              // new note
               Inc(CurrentPlayer.LengthNote);
               Inc(CurrentPlayer.HighNote);
               SetLength(CurrentPlayer.Note, CurrentPlayer.LengthNote);
 
-              // update player's last note
               LastPlayerNote := @CurrentPlayer.Note[CurrentPlayer.HighNote];
               with LastPlayerNote^ do
               begin
-                Start    := ActualBeat;
-                Length   := 1;
-                Tone     := ActualTone; // Tone || ToneAbs
-                //Detect := LyricsState.MidBeat; // Not used!
-                Hit      := NoteHit; // half note patch
+                if BackfillCount > 0 then
+                begin
+                  Start    := CurrentLineFragment.Start;
+                  Length   := 1 + BackfillCount;
+                end
+                else
+                begin
+                  Start    := ActualBeat;
+                  Length   := 1;
+                end;
+                Tone     := ActualTone;
+                Hit      := NoteHit;
                 NoteType := CurrentNoteType;
               end;
             end
             else
             begin
-              // extend note length
               if (LastPlayerNote <> nil) then
                 Inc(LastPlayerNote.Length);
             end;
 
-            // check for perfect note and then light the star (on Draw)
-            for LineFragmentIndex := 0 to Line.HighNote do
+            // check for perfect note
+            if (LastPlayerNote <> nil) and LastPlayerNote.Hit and
+               (CurrentLineFragment.Start  = LastPlayerNote.Start) and
+               (CurrentLineFragment.Length = LastPlayerNote.Length) and
+               (CurrentLineFragment.Tone   = LastPlayerNote.Tone) then
             begin
-              CurrentLineFragment := @Line.Note[LineFragmentIndex];
-              if (CurrentLineFragment.Start  = LastPlayerNote.Start) and
-                (CurrentLineFragment.Length = LastPlayerNote.Length) and
-                (CurrentLineFragment.Tone   = LastPlayerNote.Tone) then
-              begin
-                LastPlayerNote.Perfect := true;
-              end;
+              LastPlayerNote.Perfect := true;
             end;
           end; // if SentenceDetected = SentenceMax
 
         end; // if Detected
+
+        { Once a note ends, a subsequent matching pitch cannot prove that it
+          was sung. Do not award whole short notes after their scoring window. }
       end;
     end; // for PlayerIndex
   end; // for ActualBeat
