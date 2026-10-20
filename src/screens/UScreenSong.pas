@@ -197,6 +197,7 @@ type
       SongIndex:    integer; //Index of Song that is playing since UScreenScore...
 
       AutoPlayFolder: string;
+      PendingNavIndex: integer;
       constructor Create; override;
       function ParseInput(PressedKey: cardinal; CharCode: UCS4Char; PressedDown: boolean): boolean; override;
       function ParseMouse(MouseButton: integer; BtnDown: boolean; X, Y: integer): boolean; override;
@@ -208,6 +209,7 @@ type
       procedure SetSubselection(Id: integer; Filter: TSongFilter); overload;
       procedure SetSubselection(Id: UTF8String = ''; Filter: TSongFilter = sfAll); overload;
       procedure SkipTo(Target: cardinal; Force: boolean = false);
+      procedure NavigateToSong(TargetSongIndex: integer);
       procedure Refresh(Sort: integer; Categories: boolean; Duets: boolean);
       function FreeListMode: boolean;
       procedure SelectRandomSong(RandomCategory: boolean = false);
@@ -861,6 +863,7 @@ var
   StaticY: real;
 begin
   inherited Create;
+  PendingNavIndex := -1;
 
   Self.DefaultCover := UTexture.Texture.LoadTexture(USkins.Skin.GetTextureFileName('SongCover'));
 
@@ -1697,6 +1700,13 @@ begin
 
   for I := 0 to High(TextNonParty) do
     Text[TextNonParty[I]].Visible := Visible;
+
+  if PendingNavIndex >= 0 then
+  begin
+    I := PendingNavIndex;
+    PendingNavIndex := -1;
+    NavigateToSong(I);
+  end;
 end;
 
 procedure TScreenSong.OnHide;
@@ -1714,6 +1724,12 @@ var
   Increment: real;
 begin
   Result := true;
+  if (PendingNavIndex >= 0) and not Assigned(Display.NextScreen) then
+  begin
+    I := PendingNavIndex;
+    PendingNavIndex := -1;
+    NavigateToSong(I);
+  end;
   if (AutoPlayFolder <> '') and not Assigned(Display.NextScreen) then begin
     Log.LogStatus('Checking AutoPlayFolder: ' + AutoPlayFolder, 'ScreenSong.Draw');
     for I := 0 to High(CatSongs.Song) do
@@ -1721,7 +1737,7 @@ begin
          SameFileName(ExcludeTrailingPathDelimiter(CatSongs.Song[I].Path.ToNative),
                       ExcludeTrailingPathDelimiter(AutoPlayFolder)) then begin
         Log.LogStatus('Found downloaded song at index ' + IntToStr(I) + ', starting song...', 'ScreenSong.Draw');
-        AutoPlayFolder := ''; SetSubselection(); SkipTo(I, true); StartSong; Exit;
+        AutoPlayFolder := ''; NavigateToSong(I); StartSong; Exit;
       end;
     Log.LogWarn('AutoPlayFolder ' + AutoPlayFolder + ' not found in active song list (' + IntToStr(Length(CatSongs.Song)) + ' songs)', 'ScreenSong.Draw');
     AutoPlayFolder := '';
@@ -1947,6 +1963,36 @@ begin
   Self.IsScrolling := true;
   Self.DuetChange := false;
   Self.StopPreview();
+end;
+
+procedure TScreenSong.NavigateToSong(TargetSongIndex: integer);
+var
+  VisibleIdx: integer;
+begin
+  if (TargetSongIndex < 0) or (TargetSongIndex > High(CatSongs.Song)) or CatSongs.Song[TargetSongIndex].Main then
+    Exit;
+
+  Log.LogStatus('TScreenSong.NavigateToSong: TargetSongIndex=' + IntToStr(TargetSongIndex) + ' ("' + CatSongs.Song[TargetSongIndex].Artist + ' - ' + CatSongs.Song[TargetSongIndex].Title + '")', 'ScreenSong');
+
+  // Clear search bar if text was entered
+  Self.Text[Self.SearchText].Text := '';
+  Self.Text[Self.SearchTextPlaceholder].Visible := true;
+
+  if (UIni.Ini.Tabs = 1) and (CatSongs.Song[TargetSongIndex].OrderNum > 0) then
+    Self.SetSubselection(IntToStr(CatSongs.Song[TargetSongIndex].OrderNum), sfCategory)
+  else
+    Self.SetSubselection('', sfAll);
+
+  VisibleIdx := CatSongs.FindVisibleIndex(TargetSongIndex);
+  if (VisibleIdx < 0) or (VisibleIdx >= CatSongs.GetVisibleSongs()) then
+    VisibleIdx := 0;
+
+  Self.SkipTo(VisibleIdx, true);
+  Self.SongTarget := VisibleIdx;
+  Self.SongCurrent := VisibleIdx;
+  Self.Interaction := TargetSongIndex;
+  Self.SetScroll(true);
+  Self.OnSongSelect(true);
 end;
 
 procedure TScreenSong.SelectRandomSong(RandomCategory: boolean = false);

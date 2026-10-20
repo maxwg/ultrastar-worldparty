@@ -77,6 +77,7 @@ function LibrarySearchTestSubmissions: integer;
 function LibrarySearchTestViewBuilds: integer;
 function LibrarySearchTestCoverDecodes: integer;
 function LibrarySearchTestArtReady: boolean;
+function LibrarySearchTestLocalIndex(Index: integer): integer;
 {$ENDIF}
 implementation
 uses SysUtils, Math, IniFiles, UCommon, dglOpenGL, UDrawTexture, UThemes, UGraphic, UPlatform, UCommandLine,
@@ -87,6 +88,13 @@ var LibrarySearch: TScreenLibrarySearch;
 {$IFDEF LIBRARY_E2E}
 function LibrarySearchTestCoverDecodes: integer;
 begin Result := LibrarySearch.FCoverLoader.DecodeCount; end;
+
+function LibrarySearchTestLocalIndex(Index: integer): integer;
+begin
+  Result := -1;
+  if Assigned(LibrarySearch) and (Index >= 0) and (Index < Length(LibrarySearch.FRows)) then
+    Result := LibrarySearch.FRows[Index].LocalIndex;
+end;
 
 function LibrarySearchTestArtReady: boolean;
 var I, Cached: integer;
@@ -530,8 +538,7 @@ begin
   if (FSelected < 0) or (FSelected >= Length(FRows)) then Exit;
   Row := FRows[FSelected];
   if Row.LocalIndex >= 0 then begin
-    ScreenSong.SetSubselection();
-    ScreenSong.SkipTo(Row.LocalIndex, true);
+    ScreenSong.PendingNavIndex := Row.LocalIndex;
     FadeTo(@ScreenSong);
   end else if (Row.RemoteIndex >= 0) and Assigned(FSession) and
               not FSession.Busy then begin

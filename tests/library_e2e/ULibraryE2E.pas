@@ -22,7 +22,7 @@ type
   end;
 var Phase: integer = 0; Started: QWord; Receipt: TextFile;
   LoginReleased, DownloadCaptured: boolean;
-  BurstSubmissions, CachedDecodes, IdleViewBuilds: integer;
+  BurstSubmissions, CachedDecodes, IdleViewBuilds, TargetLocal: integer;
   ArtTypingChecked: boolean;
   SyntheticBackend: TFakeAudioInput;
   SyntheticDevice: TFakeInputDevice;
@@ -451,6 +451,24 @@ begin
         SavedSettings.Free;
       end;
       Note('PASS: sound options screenshot and 30% monitor setting persisted on exit');
+      Display.CurrentScreen^.FadeTo(@ScreenSong);
+      Phase := 24;
+    end;
+    24: if (Display.CurrentScreen = @ScreenSong) and not Assigned(Display.NextScreen) then begin
+      OpenLibrarySearch('Fixture');
+      Phase := 25;
+    end;
+    25: if LibrarySearchTestSnapshot(Query, Selected, Rows, Remote, Busy, SignedIn) and LibrarySearchTestArtReady then begin
+      TargetLocal := LibrarySearchTestLocalIndex(2);
+      if TargetLocal < 0 then Fail('card 2 is not a local song');
+      ClickCard(399, 181);
+      Phase := 26;
+    end;
+    26: if (Display.CurrentScreen = @ScreenSong) and not Assigned(Display.NextScreen) then begin
+      if ScreenSong.PendingNavIndex <> -1 then Fail('PendingNavIndex not consumed');
+      if ScreenSong.Interaction <> TargetLocal then
+        Fail(Format('ScreenSong did not navigate to clicked song (expected local %d, got %d)', [TargetLocal, ScreenSong.Interaction]));
+      Note('PASS: clicking a song in search results auto-navigates directly to that song in ScreenSong');
       FreeLibrarySearch; Note('PASS: helper cleanup'); CloseFile(Receipt); Halt(0);
     end;
   end;
