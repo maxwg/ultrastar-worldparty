@@ -74,6 +74,23 @@ reuse the result. The capture mutex protects only a short PCM snapshot, never DS
 Bounded, decimated analysis uses fixed scratch arrays rather than per-frame
 allocations. The input window remains the newest 4096 samples.
 
+The YIN/MPM inner loop reuses the squared-sample prefix sums to compute each
+lag's squared difference from a cross-correlation. Four independent correlation
+accumulators avoid a long serial dependency chain, with a scalar tail for
+windows that are not a multiple of four. This preserves the scoring and
+detector thresholds; it does not shorten the physical microphone buffer or
+the 20 ms update cadence. A local Windows x86/FPC `-O4` A/B comparison on one
+33-second recorded-vocal input (1,660 frames) measured median processing times
+of **2.302 s before** versus **0.735 s after** across three runs each, about
+**3.1x faster**. Pitch validity, all three difficulty hit decisions, and
+reported MIDI pitches were identical frame by frame on that input. These
+measurements apply to the isolated detector benchmark, not whole-game FPS.
+
+The production capture-state regression also covers a capture-start failure
+without an initialized logger (e.g., in an isolated test harness); it must
+not crash while reporting the error. When logging is initialized, the failed
+microphone startup remains an error-level diagnostic.
+
 In a deterministic 44.1 kHz synthetic-A4 onset test, pitch becomes valid in
 40 ms after fresh microphone frames begin; this does **not** include capture
 driver, audio-device or playback synchronization delays. The MPM/YIN fusion

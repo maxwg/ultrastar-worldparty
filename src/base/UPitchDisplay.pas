@@ -51,7 +51,7 @@ var
   { The prefix array includes the initial zero and N accumulated samples. }
   PrefSq: array[0..MaximumAnalysisSamples] of Double;
   I, J, N, Step, Offset, MinLag, MaxLag, Lag, Best, BestYIN, BestMPM, Window, Recent: Integer;
-  Sum, Delta, Energy, Norm, Mean, Rate, Period, Denom, MaxPeak, MPMThreshold: Double;
+  Sum, Correlation, C0, C1, C2, C3, Energy, Norm, Mean, Rate, Period, Denom, MaxPeak, MPMThreshold: Double;
 begin
   FillChar(Result, SizeOf(Result), 0);
   if IsNan(SampleRate) or IsInfinite(SampleRate) then Exit;
@@ -104,17 +104,29 @@ begin
   { Joint computation: YIN difference + MPM Normalized Square Difference }
   for Lag := 1 to MaxLag do
   begin
-    Energy := 0;
-    for I := 0 to Window-1 do
+    { Sum((a-b)^2) = Sum(a^2)+Sum(b^2)-2*Sum(a*b).
+      Reuse the prefix-square sums needed by MPM instead of performing a
+      subtraction and a second multiplication for every sample and lag. }
+    Norm := PrefSq[Window] + PrefSq[Lag+Window] - PrefSq[Lag];
+    { Four independent accumulators shorten the dependency chain and let the
+      CPU overlap multiplications without changing the selected pitch. }
+    C0 := 0; C1 := 0; C2 := 0; C3 := 0;
+    for I := 0 to (Window div 4)-1 do
     begin
-      Delta := Data[I] - Data[I+Lag];
-      Energy := Energy + Delta*Delta;
+      J := I*4;
+      C0 := C0 + Data[J]  *Data[J+Lag];
+      C1 := C1 + Data[J+1]*Data[J+Lag+1];
+      C2 := C2 + Data[J+2]*Data[J+Lag+2];
+      C3 := C3 + Data[J+3]*Data[J+Lag+3];
     end;
+    Correlation := (C0+C1)+(C2+C3);
+    for I := (Window div 4)*4 to Window-1 do
+      Correlation := Correlation + Data[I]*Data[I+Lag];
+    Energy := Max(0.0, Norm - 2*Correlation);
     Sum := Sum + Energy;
     if Sum > 1e-15 then Difference[Lag] := Energy * Lag / Sum
     else Difference[Lag] := 1;
 
-    Norm := (PrefSq[Window] - PrefSq[0]) + (PrefSq[Lag+Window] - PrefSq[Lag]);
     if Norm > 1e-12 then NSDF[Lag] := 1.0 - Energy / Norm
     else NSDF[Lag] := 0;
   end;
