@@ -260,6 +260,7 @@ procedure TAudioInput_SDL.CheckCaptureHealth;
 var I, C, N, Matches: Integer; Device: TSDLInputDevice;
   Linked, Stale: Boolean; DeviceName: PChar; Tick: Cardinal;
 begin
+  if not Started then Exit;
   Tick := SDL_GetTicks;
   if Cardinal(Tick-LastHealthCheck) < 2000 then Exit;
   LastHealthCheck := Tick;

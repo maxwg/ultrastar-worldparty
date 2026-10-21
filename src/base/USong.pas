@@ -710,6 +710,12 @@ begin
           Self.Start := StrToFloatI18n(Value);
         'END': //song end in miliseconds
           TryStrtoInt(Value, Self.Finish);
+        'PREVIEW', 'PREVIEWSTART': //song preview start in seconds
+        begin
+          Self.PreviewStart := StrToFloatI18n(Value);
+          if Self.PreviewStart > 0 then
+            MedleyFlags := MedleyFlags or 1;
+        end;
         'ENCODING': //@deprecated file encoding
           Self.Encoding := ParseEncoding(Value, Ini.DefaultEncoding);
         'MEDLEYSTARTBEAT': //beat position to medley starts
@@ -946,7 +952,7 @@ begin
 
   len_lines := length(Lines[0].Line);
 
-  if (Length(series) > 0) and (series[max].len > 3) then
+  if (Length(series) > 0) and (series[max].len >= 1) then
   begin
     Self.Medley.StartBeat := Lines[0].Line[series[max].start].Note[0].Start;
     len_notes := length(Lines[0].Line[series[max].end_].Note);
@@ -989,10 +995,16 @@ begin
   end;
 
   //set PreviewStart if not set
-  if Self.PreviewStart = 0 then
+  if Self.PreviewStart <= 0 then
   begin
-    if Self.Medley.Source = msCalculated then
-      Self.PreviewStart := UNote.GetTimeFromBeat(Self.Medley.StartBeat);
+    if Self.Medley.Source in [msTag, msCalculated] then
+      Self.PreviewStart := UNote.GetTimeFromBeat(Self.Medley.StartBeat, Self)
+    else if num_lines > 0 then
+    begin
+      I := EnsureRange(num_lines div 3, 0, num_lines - 1);
+      if Length(Lines[0].Line[I].Note) > 0 then
+        Self.PreviewStart := UNote.GetTimeFromBeat(Lines[0].Line[I].Note[0].Start, Self);
+    end;
   end;
 end;
 

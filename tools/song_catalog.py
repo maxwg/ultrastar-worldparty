@@ -240,12 +240,124 @@ def media_links(document):
     return list(dict.fromkeys('https://www.youtube.com/watch?v=' + x for x in links))
 
 
+def detect_preview(chart_lines):
+    headers = {}
+    lines = []
+    current_line = []
+    bpm = 120.0
+    gap = 0.0
+
+    for raw in chart_lines:
+        line = raw.strip()
+        if not line:
+            continue
+        if line.startswith('#'):
+            k, _, v = line[1:].partition(':')
+            headers[k.strip().upper()] = v.strip()
+        elif line.startswith((': ', '* ', 'F ')):
+            parts = line.split(maxsplit=4)
+            if len(parts) >= 5:
+                try:
+                    start_beat = int(parts[1])
+                    length = int(parts[2])
+                    pitch = int(parts[3])
+                    syllable = parts[4]
+                    current_line.append((start_beat, length, pitch, syllable))
+                except ValueError:
+                    pass
+        elif line.startswith(('- ', '-')):
+            if current_line:
+                lines.append(current_line)
+                current_line = []
+    if current_line:
+        lines.append(current_line)
+
+    if 'PREVIEWSTART' in headers or 'PREVIEW' in headers:
+        return None
+
+    try:
+        if 'BPM' in headers:
+            bpm = float(headers['BPM'].replace(',', '.'))
+        if 'GAP' in headers:
+            gap = float(headers['GAP'].replace(',', '.')) / 1000.0
+    except ValueError:
+        pass
+
+    def beat_to_sec(beat):
+        return max(0.0, gap + (beat / (bpm * 4.0)) * 60.0)
+
+    if 'MEDLEYSTARTBEAT' in headers:
+        try:
+            start_beat = int(headers['MEDLEYSTARTBEAT'])
+            start_sec = beat_to_sec(start_beat)
+            return {'preview_start': f'{start_sec:.2f}'}
+        except ValueError:
+            pass
+
+    if not lines:
+        return {'preview_start': '30.00'}
+
+    sentences = [''.join(s[3] for s in l).strip().lower() for l in lines]
+    sentences = [re.sub(r'[^\w\s]', '', s) for s in sentences]
+
+    best_len = 0
+    best_start = 0
+    for i in range(len(sentences) - 1):
+        if not sentences[i] or len(sentences[i]) < 4:
+            continue
+        for j in range(i + 1, len(sentences)):
+            match_len = 0
+            while i + match_len < j and j + match_len < len(sentences):
+                s1 = sentences[i + match_len]
+                s2 = sentences[j + match_len]
+                if s1 and s2 and s1 == s2:
+                    match_len += 1
+                else:
+                    break
+            if match_len > best_len:
+                best_len = match_len
+                best_start = i
+
+    if best_len >= 1:
+        start_beat = lines[best_start][0][0]
+        end_beat = lines[best_start + best_len - 1][-1][0] + lines[best_start + best_len - 1][-1][1]
+        start_sec = beat_to_sec(start_beat)
+        res = {'preview_start': f'{start_sec:.2f}'}
+        if 'MEDLEYSTARTBEAT' not in headers:
+            res['medley_start'] = str(start_beat)
+            res['medley_end'] = str(end_beat)
+        return res
+    else:
+        total_beats = lines[-1][-1][0]
+        target_beat = total_beats * 0.3
+        chosen_line = min(lines, key=lambda l: abs(l[0][0] - target_beat))
+        start_beat = chosen_line[0][0]
+        start_sec = beat_to_sec(start_beat)
+        res = {'preview_start': f'{start_sec:.2f}'}
+        if 'MEDLEYSTARTBEAT' not in headers:
+            res['medley_start'] = str(start_beat)
+            res['medley_end'] = str(start_beat + 100)
+        return res
+
+
 def prepare_chart(chart):
     # Preserve all non-file headers and their complete values, including colons.
     external = {'MP3', 'AUDIO', 'VIDEO', 'COVER', 'BACKGROUND', 'INSTRUMENTAL', 'VOCALS', 'ENCODING'}
     lines = [line for line in chart.splitlines()
              if not (line.startswith('#') and line[1:].partition(':')[0].strip().upper() in external)]
-    return '#MP3:media.mp4\n#VIDEO:media.mp4\n#ENCODING:UTF8\n' + '\n'.join(lines) + '\n'
+    extra_headers = []
+    preview = detect_preview(lines)
+    if preview:
+        if 'preview_start' in preview:
+            extra_headers.append(f"#PREVIEWSTART:{preview['preview_start']}")
+        if 'medley_start' in preview:
+            extra_headers.append(f"#MEDLEYSTARTBEAT:{preview['medley_start']}")
+        if 'medley_end' in preview:
+            extra_headers.append(f"#MEDLEYENDBEAT:{preview['medley_end']}")
+    prefix = '#MP3:media.mp4\n#VIDEO:media.mp4\n#ENCODING:UTF8\n'
+    if extra_headers:
+        prefix += '\n'.join(extra_headers) + '\n'
+    return prefix + '\n'.join(lines) + '\n'
 
 
 class SameOriginRedirect(urllib.request.HTTPRedirectHandler):

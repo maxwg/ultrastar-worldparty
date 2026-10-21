@@ -1892,7 +1892,7 @@ begin
     PreviewOpened := Interaction;
 
     // preview start is either calculated (by finding the chorus) or pre-set, use it
-    if (Song.PreviewStart > 0.0) and InRange(Song.PreviewStart, 0.0, AudioPlayback.Length) then
+    if (Song.PreviewStart > 0.0) and ((AudioPlayback.Length <= 0.0) or (Song.PreviewStart < AudioPlayback.Length)) then
       PreviewPos := Song.PreviewStart
     else
     begin // otherwise, fallback to simple preview calculation

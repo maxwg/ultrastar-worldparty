@@ -176,9 +176,8 @@ type
   end;
 
   TAudioInputBase = class( TInterfacedObject, IAudioInput )
-    private
-      Started: boolean;
     protected
+      Started: boolean;
       function UnifyDeviceName(const name: UTF8String; deviceIndex: integer): UTF8String;
     public
       function GetName: String;           virtual; abstract;
@@ -900,7 +899,6 @@ var
   DeviceIndex:  integer;
   ChannelIndex: integer;
   Device:       TAudioInputDevice;
-  DeviceCfg:    PInputDeviceConfig;
 begin
   for DeviceIndex := 0 to High(AudioInputProcessor.DeviceList) do
   begin
@@ -911,8 +909,7 @@ begin
     Device.Stop();
 
     // disconnect capture buffers
-    DeviceCfg := @Ini.InputDeviceConfig[Device.CfgIndex];
-    for ChannelIndex := 0 to High(DeviceCfg.ChannelToPlayerMap) do
+    for ChannelIndex := 0 to High(Device.CaptureChannel) do
       Device.LinkCaptureBuffer(ChannelIndex, nil);
   end;
 

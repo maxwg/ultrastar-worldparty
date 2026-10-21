@@ -640,6 +640,9 @@ var
   HasLinkedChannel, AllChannelsStale, Recover: Boolean;
   SameDevice, Stopped: Boolean;
 begin
+  if not Started then
+    Exit;
+
   Tick := SDL_GetTicks;
   if fHealthCheckStarted and (Cardinal(Tick-fLastHealthCheck) < 2000) then
     Exit;
@@ -683,25 +686,31 @@ begin
       Log.LogError('BASS capture device is missing or changed; refusing to reopen another input',
         'TAudioInput_Bass.CheckCaptureHealth');
 
-    Stopped := Device.Stop();
-    for ChannelIndex := 0 to High(Device.CaptureChannel) do
-      if Assigned(Device.CaptureChannel[ChannelIndex]) then
-        Device.CaptureChannel[ChannelIndex].Clear;
+    try
+      Stopped := Device.Stop();
+      for ChannelIndex := 0 to High(Device.CaptureChannel) do
+        if Assigned(Device.CaptureChannel[ChannelIndex]) then
+          Device.CaptureChannel[ChannelIndex].Clear;
 
-    if not SameDevice then
-      Continue;
-    if not Stopped then
-    begin
-      Log.LogError('BASS capture cleanup failed; restart deferred',
-        'TAudioInput_Bass.CheckCaptureHealth');
-      Continue;
+      if not SameDevice then
+        Continue;
+      if not Stopped then
+      begin
+        Log.LogError('BASS capture cleanup failed; restart deferred',
+          'TAudioInput_Bass.CheckCaptureHealth');
+        Continue;
+      end;
+      if Device.Start() then
+        Log.LogStatus('BASS capture restarted ' + Device.Name,
+          'TAudioInput_Bass.CheckCaptureHealth')
+      else
+        Log.LogError('BASS capture restart failed ' + Device.Name + ': ' + BassCore.ErrorGetString(),
+          'TAudioInput_Bass.CheckCaptureHealth');
+    except
+      on E: Exception do
+        Log.LogError('Exception during BASS capture restart: ' + E.Message,
+          'TAudioInput_Bass.CheckCaptureHealth');
     end;
-    if Device.Start() then
-      Log.LogStatus('BASS capture restarted ' + Device.Name,
-        'TAudioInput_Bass.CheckCaptureHealth')
-    else
-      Log.LogError('BASS capture restart failed ' + Device.Name + ': ' + BassCore.ErrorGetString(),
-        'TAudioInput_Bass.CheckCaptureHealth');
   end;
 end;
 

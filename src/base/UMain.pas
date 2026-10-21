@@ -307,7 +307,11 @@ begin
       CheckEvents;
 
       // display
-      if Assigned(AudioInput) then AudioInput.CheckCaptureHealth;
+      try
+        if Assigned(AudioInput) then AudioInput.CheckCaptureHealth;
+      except
+        on E: Exception do Log.LogError('AudioInput.CheckCaptureHealth: ' + E.Message, 'MainLoop');
+      end;
       if Assigned(AudioPlayback) then AudioInputProcessor.UpdateMonitorLevels;
       Done := not Display.Draw;
       {$IFDEF LIBRARY_E2E} LibraryE2ETick; {$ENDIF}
