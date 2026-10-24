@@ -285,10 +285,10 @@ end;
 
 procedure TCaptureBuffer.Clear;
 begin
-  if assigned(LogBuffer) then
-    LogBuffer.Clear;
   LockAnalysisBuffer();
   try
+    if assigned(LogBuffer) then
+      LogBuffer.Clear;
     fLastCaptureTick := 0;
     fCaptureStartTick := SDL_GetTicks;
     fMonitorState.Gain := 0;
@@ -368,16 +368,16 @@ begin
     Move(Buffer[BufferOffset], AnalysisBuffer[Length(AnalysisBuffer)-SampleCount],
          SampleCount * SizeOf(SmallInt));
 
+    // save capture-data to LogBuffer if enabled or for last-song debug package
+    if Assigned(LogBuffer) and ((Ini.SavePlayback = 1) or True) then
+    begin
+      // Keep up to 30MB of audio buffer (~5.5 minutes of 44.1kHz mono 16-bit PCM)
+      if LogBuffer.Size < 30 * 1024 * 1024 then
+        LogBuffer.Write(Buffer^, BufferSize);
+    end;
+
   finally
     UnlockAnalysisBuffer();
-  end;
-
-  // save capture-data to LogBuffer if enabled or for last-song debug package
-  if (Ini.SavePlayback = 1) or True then
-  begin
-    // Keep up to 30MB of audio buffer (~5.5 minutes of 44.1kHz mono 16-bit PCM)
-    if LogBuffer.Size < 30 * 1024 * 1024 then
-      LogBuffer.Write(Buffer^, BufferSize);
   end;
 end;
 
@@ -757,34 +757,43 @@ var
   SamplesPerChannel:       integer;
   i:                       integer;
 begin
+  if (Buffer = nil) or (Size <= 0) or (InputDevice = nil) then
+    Exit;
+
   AudioFormat := InputDevice.AudioFormat;
+  if AudioFormat.FrameSize <= 0 then
+    Exit;
+
   SampleSize := AudioSampleSize[AudioFormat.Format];
   SamplesPerChannel := Size div AudioFormat.FrameSize;
+  if SamplesPerChannel <= 0 then
+    Exit;
 
   SingleChannelBufferSize := SamplesPerChannel * SampleSize;
   GetMem(SingleChannelBuffer, SingleChannelBufferSize);
-
-  // process channels
-  for ChannelIndex := 0 to High(InputDevice.CaptureChannel) do
-  begin
-    CaptureChannel := InputDevice.CaptureChannel[ChannelIndex];
-    // check if a capture buffer was assigned, otherwise there is nothing to do
-    if (CaptureChannel <> nil) then
+  try
+    // process channels
+    for ChannelIndex := 0 to High(InputDevice.CaptureChannel) do
     begin
-      // set offset according to channel index
-      MultiChannelBuffer := @Buffer[ChannelIndex * SampleSize];
-      // separate channel-data from interleaved multi-channel (e.g. stereo) data
-      for i := 0 to SamplesPerChannel-1 do
+      CaptureChannel := InputDevice.CaptureChannel[ChannelIndex];
+      // check if a capture buffer was assigned, otherwise there is nothing to do
+      if (CaptureChannel <> nil) then
       begin
-        Move(MultiChannelBuffer[i*AudioFormat.FrameSize],
-             SingleChannelBuffer[i*SampleSize],
-             SampleSize);
+        // set offset according to channel index
+        MultiChannelBuffer := @Buffer[ChannelIndex * SampleSize];
+        // separate channel-data from interleaved multi-channel (e.g. stereo) data
+        for i := 0 to SamplesPerChannel-1 do
+        begin
+          Move(MultiChannelBuffer[i*AudioFormat.FrameSize],
+               SingleChannelBuffer[i*SampleSize],
+               SampleSize);
+        end;
+        CaptureChannel.ProcessNewBuffer(SingleChannelBuffer, SingleChannelBufferSize);
       end;
-      CaptureChannel.ProcessNewBuffer(SingleChannelBuffer, SingleChannelBufferSize);
     end;
+  finally
+    FreeMem(SingleChannelBuffer);
   end;
-
-  FreeMem(SingleChannelBuffer);
 end;
 
 { TAudioInputBase }

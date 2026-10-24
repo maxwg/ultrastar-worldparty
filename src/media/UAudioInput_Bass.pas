@@ -105,8 +105,14 @@ var
 function MicrophoneCallback(stream: HSTREAM; buffer: Pointer;
     len: integer; inputDevice: Pointer): boolean; {$IFDEF MSWINDOWS}stdcall;{$ELSE}cdecl;{$ENDIF}
 begin
-  AudioInputProcessor.HandleMicrophoneData(buffer, len, inputDevice);
   Result := true;
+  try
+    if (buffer <> nil) and (len > 0) and (inputDevice <> nil) then
+      AudioInputProcessor.HandleMicrophoneData(buffer, len, inputDevice);
+  except
+    on E: Exception do
+      ; // Protect unmanaged callback boundary: never let exception escape into BASS C runtime
+  end;
 end;
 
 
@@ -637,14 +643,16 @@ var
   Tick: Cardinal;
   DeviceIndex, ChannelIndex: Integer;
   Device: TBassInputDevice;
-  HasLinkedChannel, AllChannelsStale, Recover: Boolean;
+  HasLinkedChannel: Boolean;
   SameDevice, Stopped: Boolean;
+  ActiveState: DWORD;
+  ShouldRecover: Boolean;
 begin
   if not Started then
     Exit;
 
   Tick := SDL_GetTicks;
-  if fHealthCheckStarted and (Cardinal(Tick-fLastHealthCheck) < 2000) then
+  if fHealthCheckStarted and (Cardinal(Tick-fLastHealthCheck) < 3000) then
     Exit;
   fLastHealthCheck := Tick;
   fHealthCheckStarted := True;
@@ -655,29 +663,29 @@ begin
       Continue;
     Device := TBassInputDevice(AudioInputProcessor.DeviceList[DeviceIndex]);
     HasLinkedChannel := False;
-    AllChannelsStale := True;
     for ChannelIndex := 0 to High(Device.CaptureChannel) do
       if Assigned(Device.CaptureChannel[ChannelIndex]) then
-      begin
         HasLinkedChannel := True;
-        if Device.CaptureChannel[ChannelIndex].CaptureAge < 1500 then
-          AllChannelsStale := False;
-      end;
     if not HasLinkedChannel then
       Continue;
 
-    Recover := Device.RecordStream = 0;
-    if not Recover then
-      Recover := BASS_ChannelIsActive(Device.RecordStream) = BASS_ACTIVE_STOPPED;
-    if not Recover then
-      Recover := AllChannelsStale;
-    if not Recover then
+    // Determine actual stream status from BASS.
+    // If the channel is still actively playing, do not tear down the audio device.
+    if Device.RecordStream = 0 then
+      ShouldRecover := True
+    else
+    begin
+      ActiveState := BASS_ChannelIsActive(Device.RecordStream);
+      ShouldRecover := (ActiveState = BASS_ACTIVE_STOPPED);
+    end;
+
+    if not ShouldRecover then
       Continue;
 
     SameDevice := Device.DeviceIdentityMatches() and
       not Device.DeviceIdentityIsAmbiguous();
     if SameDevice then
-      Log.LogStatus('BASS capture stalled; restarting ' + Device.Name,
+      Log.LogStatus('BASS capture stream inactive; attempting recovery for ' + Device.Name,
         'TAudioInput_Bass.CheckCaptureHealth')
     else if Device.DeviceIdentityMatches() then
       Log.LogError('BASS capture device identity is ambiguous; refusing automatic recovery',
@@ -688,9 +696,6 @@ begin
 
     try
       Stopped := Device.Stop();
-      for ChannelIndex := 0 to High(Device.CaptureChannel) do
-        if Assigned(Device.CaptureChannel[ChannelIndex]) then
-          Device.CaptureChannel[ChannelIndex].Clear;
 
       if not SameDevice then
         Continue;

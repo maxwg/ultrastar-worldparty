@@ -308,9 +308,15 @@ begin
   if Length(AudioInputProcessor.Sound) > 0 then
   begin
     CapBuf := AudioInputProcessor.Sound[0];
-    if (CapBuf <> nil) and (CapBuf.LogBuffer <> nil) and (CapBuf.LogBuffer.Size > 0) then
+    if (CapBuf <> nil) and (CapBuf.LogBuffer <> nil) then
     begin
-      Log.SaveWavFile(CapBuf.LogBuffer, CapBuf.AudioFormat, FDebugDir.Append('recorded_mic.wav'));
+      CapBuf.LockAnalysisBuffer();
+      try
+        if CapBuf.LogBuffer.Size > 0 then
+          Log.SaveWavFile(CapBuf.LogBuffer, CapBuf.AudioFormat, FDebugDir.Append('recorded_mic.wav'));
+      finally
+        CapBuf.UnlockAnalysisBuffer();
+      end;
     end;
   end;
 

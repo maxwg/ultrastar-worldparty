@@ -54,7 +54,13 @@ type
 
 procedure MicrophoneCallback(inputDevice: TSDLInputDevice; input: pointer; len: cint); cdecl;
 begin
-  AudioInputProcessor.HandleMicrophoneData(input, len, inputDevice);
+  try
+    if (input <> nil) and (len > 0) and (inputDevice <> nil) then
+      AudioInputProcessor.HandleMicrophoneData(input, len, inputDevice);
+  except
+    on E: Exception do
+      ; // Protect unmanaged callback boundary: never let exception escape into SDL C runtime
+  end;
 end;
 
 function TSDLInputDevice.Start(): boolean;
@@ -258,27 +264,24 @@ end;
 
 procedure TAudioInput_SDL.CheckCaptureHealth;
 var I, C, N, Matches: Integer; Device: TSDLInputDevice;
-  Linked, Stale: Boolean; DeviceName: PChar; Tick: Cardinal;
+  Linked: Boolean; DeviceName: PChar; Tick: Cardinal;
 begin
   if not Started then Exit;
   Tick := SDL_GetTicks;
-  if Cardinal(Tick-LastHealthCheck) < 2000 then Exit;
+  if Cardinal(Tick-LastHealthCheck) < 3000 then Exit;
   LastHealthCheck := Tick;
   for I := 0 to High(AudioInputProcessor.DeviceList) do
   begin
     if not (AudioInputProcessor.DeviceList[I] is TSDLInputDevice) then Continue;
     Device := TSDLInputDevice(AudioInputProcessor.DeviceList[I]);
     if not Assigned(Device) or not Device.UseName then Continue;
-    Linked := False; Stale := True;
+    Linked := False;
     for C := 0 to High(Device.CaptureChannel) do
       if Assigned(Device.CaptureChannel[C]) then
-      begin
         Linked := True;
-        Stale := Stale and (Device.CaptureChannel[C].CaptureAge >= 1500);
-      end;
     if not Linked then Continue;
-    if (Device.DevID <> 0) and not Stale and
-       (SDL_GetAudioDeviceStatus(Device.DevID) <> SDL_AUDIO_STOPPED) then Continue;
+    if (Device.DevID <> 0) and (SDL_GetAudioDeviceStatus(Device.DevID) <> SDL_AUDIO_STOPPED) then
+      Continue;
     { Never replace a missing named microphone with a different/default input. }
     Matches := 0;
     for N := 0 to SDL_GetNumAudioDevices(1)-1 do
@@ -287,10 +290,13 @@ begin
       if (DeviceName <> nil) and (UTF8String(DeviceName) = Device.Name) then Inc(Matches);
     end;
     if Matches <> 1 then Continue;
-    Device.Stop;
-    for C := 0 to High(Device.CaptureChannel) do
-      if Assigned(Device.CaptureChannel[C]) then Device.CaptureChannel[C].Clear;
-    if Device.Start then Log.LogStatus('Microphone capture recovered: '+Device.Name, 'SDL');
+    try
+      Device.Stop;
+      if Device.Start then Log.LogStatus('Microphone capture recovered: '+Device.Name, 'SDL');
+    except
+      on E: Exception do
+        Log.LogError('Exception during SDL capture restart: ' + E.Message, 'TAudioInput_SDL.CheckCaptureHealth');
+    end;
   end;
 end;
 
