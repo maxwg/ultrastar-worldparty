@@ -27,6 +27,8 @@ begin
   Check(ArtistBucket('') = 0, 'empty artist safe');
   Check(ArtistBucket('東京') = 0, 'non-Latin safe');
   Check(ArtistBucket('Eclair') = 5, 'uses caller accent-normalized artist');
+  Check(ArtistBucket('Éclair') = 5, 'accented E bucket');
+  Check(ArtistBucket('Álvaro Soler') = 1, 'accented A bucket');
   for I := 0 to ArtistBucketCount - 1 do Targets[I] := -1;
   Check(NextArtistBucket(Targets, 1, 1) = -1, 'empty filtered library');
   Targets[1] := 0; Targets[3] := 2; Targets[26] := 9;
@@ -52,6 +54,7 @@ begin
   Check(FindArtistPrefixTarget(Entries, 0, 'a') = 3, 'artist prefix starts after current, skipping visible category headers and hidden songs');
   Check(FindArtistPrefixTarget(Entries, 3, 'A') = 0, 'artist prefix wraps and ignores case');
   Check(FindArtistPrefixTarget(Entries, -1, 'b') = 1, 'artist prefix starts at beginning');
+  Check(FindArtistPrefixTarget(Entries, -1, 'bjork') = 1, 'folded bjork matches Björk');
   Check(FindArtistPrefixTarget(Entries, 0, '東') = 4, 'Unicode artist prefix');
   Check(FindArtistPrefixTarget(Entries, 0, 'missing') = -1, 'unmatched artist prefix');
   Check(FindArtistPrefixTarget(Entries, 0, '') = -1, 'empty artist prefix');

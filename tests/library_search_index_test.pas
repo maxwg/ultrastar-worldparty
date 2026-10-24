@@ -16,11 +16,15 @@ begin
 end;
 procedure ExpectQuery(const Q: UTF8String; Count: integer);
 begin
+  WriteLn('Testing: ', Q, ' expected count: ', Count);
   Start := GetTickCount64;
   repeat
     if Worker.TryTake(Value) then begin
       if (Value.Revision <> Revision) or (Value.Query <> Q) or
-         (Length(Value.Entries) <> Count) then begin WriteLn('FAIL: stale or incorrect result'); Halt(1); end;
+         (Length(Value.Entries) <> Count) then begin
+        WriteLn('FAIL: query="', Value.Query, '" rev=', Value.Revision, ' exp_rev=', Revision, ' got_count=', Length(Value.Entries), ' exp_count=', Count);
+        Halt(1);
+      end;
       Exit;
     end;
     Sleep(1);
@@ -37,6 +41,9 @@ begin
   Snapshot[20000] := Snapshot[0]; // duplicate metadata
   Snapshot[20001].Title := 'Incomplete'; Snapshot[20002].Title := 'Incomplete';
   Snapshot[19998].Artist := 'Beyoncé'; Snapshot[19998].Title := 'Café';
+  Snapshot[19997].Artist := 'КИНО'; Snapshot[19997].Title := 'Группа крови';
+  Snapshot[19996].Artist := 'AC/DC'; Snapshot[19996].Title := 'Back in Black';
+  Snapshot[19995].Artist := 'Queen'; Snapshot[19995].Title := 'Don''t Stop Me Now';
   Seen := TStringList.Create;
   try
     Seen.Sorted := true; Seen.CaseSensitive := true; MeasureStart := ClockMs; Matches := 0;
@@ -63,10 +70,34 @@ begin
     if Value.Entries[0].LocalIndex <> 19999 then Halt(1);
     Revision := Worker.Submit('BEYONCÉ CAFÉ'); ExpectQuery('BEYONCÉ CAFÉ', 1);
     if Value.Entries[0].LocalIndex <> 19998 then Halt(1);
+    Revision := Worker.Submit('beyonce cafe'); ExpectQuery('beyonce cafe', 1);
+    if Value.Entries[0].LocalIndex <> 19998 then Halt(1);
+    Revision := Worker.Submit('BEYONCE CAFE'); ExpectQuery('BEYONCE CAFE', 1);
+    if Value.Entries[0].LocalIndex <> 19998 then Halt(1);
+    Revision := Worker.Submit('cafe'); ExpectQuery('cafe', 1);
+    if Value.Entries[0].LocalIndex <> 19998 then Halt(1);
+
+    // Cyrillic case-insensitive match (КИНО matching кино):
+    Revision := Worker.Submit('кино'); ExpectQuery('кино', 1);
+    if Value.Entries[0].LocalIndex <> 19997 then Halt(1);
+
+    // Non-Latin multi-word false-positive prevention:
+    Revision := Worker.Submit('привет мир'); ExpectQuery('привет мир', 0);
+
+    // Punctuation variants (AC/DC with acdc and ac dc):
+    Revision := Worker.Submit('acdc'); ExpectQuery('acdc', 1);
+    if Value.Entries[0].LocalIndex <> 19996 then Halt(1);
+    Revision := Worker.Submit('ac dc'); ExpectQuery('ac dc', 1);
+    if Value.Entries[0].LocalIndex <> 19996 then Halt(1);
+
+    // Apostrophe omission (Don't Stop matching dont stop):
+    Revision := Worker.Submit('dont stop'); ExpectQuery('dont stop', 1);
+    if Value.Entries[0].LocalIndex <> 19995 then Halt(1);
+
     Revision := Worker.Submit('Incomplete'); ExpectQuery('Incomplete', 2);
     Revision := Worker.Submit(''); ExpectQuery('', 20002);
     if Length(Value.Keys) <> 20000 then Halt(1);
     Revision := Worker.Submit('NO MATCH'); ExpectQuery('NO MATCH', 0);
-    WriteLn('PASS: 20,003-chart snapshot, duplicate/blank policy, stale-query coalescing and exact filtering');
+    WriteLn('PASS: 20,003-chart snapshot, duplicate/blank policy, stale-query coalescing, Cyrillic case-insensitivity, and punctuation-forgiving exact filtering');
   finally Worker.Free; end;
 end.

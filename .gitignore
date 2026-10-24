@@ -41,6 +41,7 @@ ppaslink.sh
 /game/playlists/
 /game/screenshots/
 /game/songs/
+/game/LastSongDebug/
 
 # game files
 /game/config.ini

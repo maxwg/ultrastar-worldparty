@@ -5,7 +5,7 @@ uses Classes, SyncObjs;
 type
   TLibraryIndexEntry = record
     LocalIndex: integer;
-    Artist, Title, CoverPath, Identity, MatchText: UTF8String;
+    Artist, Title, CoverPath, Identity, MatchText, StripText, SpaceText: UTF8String;
   end;
   TLibraryIndexEntries = array of TLibraryIndexEntry;
   TLibraryIdentityKeys = array of UTF8String;
@@ -37,7 +37,53 @@ type
     function TryTake(out Value: TLibraryIndexResult): boolean;
   end;
 implementation
-uses SysUtils, LazUTF8, USongIdentity;
+uses SysUtils, LazUTF8, USongIdentity, UUnicodeUtils;
+
+const
+  PunctuationChars = ['''', '"', '-', '/', '\', '.', ',', '!', '?', '_', ':', ';',
+                      '(', ')', '[', ']', '{', '}', '~', '@', '#', '$', '%', '^',
+                      '&', '*', '+', '=', '<', '>', '|', '`'];
+
+function StripPunct(const S: UTF8String): UTF8String;
+var I: integer;
+begin
+  Result := '';
+  for I := 1 to Length(S) do
+    if not (S[I] in PunctuationChars) then
+      Result := Result + S[I];
+end;
+
+function SpacePunct(const S: UTF8String): UTF8String;
+var I: integer;
+begin
+  Result := '';
+  for I := 1 to Length(S) do
+    if S[I] in PunctuationChars then
+      Result := Result + ' '
+    else
+      Result := Result + S[I];
+end;
+function EntryMatches(const E: TLibraryIndexEntry; const Q, QPunct, QSpace: UTF8String): boolean;
+begin
+  Result := true;
+  if (Q = '') or (Pos(Q, E.MatchText) > 0) then Exit;
+
+  if (E.StripText <> '') then begin
+    if Pos(Q, E.StripText) > 0 then Exit;
+    if (QPunct <> '') and (QPunct <> Q) and (Pos(QPunct, E.StripText) > 0) then Exit;
+  end;
+
+  if (E.SpaceText <> '') then begin
+    if Pos(Q, E.SpaceText) > 0 then Exit;
+    if (QSpace <> '') and (QSpace <> Q) and (Pos(QSpace, E.SpaceText) > 0) then Exit;
+  end;
+
+  if (QPunct <> '') and (QPunct <> Q) and (Pos(QPunct, E.MatchText) > 0) then Exit;
+  if (QSpace <> '') and (QSpace <> Q) and (Pos(QSpace, E.MatchText) > 0) then Exit;
+
+  Result := false;
+end;
+
 constructor TLibrarySearchIndex.Create(const Snapshot: TLibraryIndexEntries);
 begin
   inherited Create(true); FreeOnTerminate := false;
@@ -70,7 +116,7 @@ begin
   finally FLock.Release; end;
 end;
 procedure TLibrarySearchIndex.BuildIndex;
-var Seen: TStringList; I, N: integer; E: TLibraryIndexEntry;
+var Seen: TStringList; I, N: integer; E: TLibraryIndexEntry; S: UTF8String;
 begin
   Seen := TStringList.Create;
   try
@@ -83,7 +129,11 @@ begin
         if Seen.IndexOf(string(E.Identity)) >= 0 then Continue;
         Seen.Add(string(E.Identity));
       end;
-      E.MatchText := UTF8LowerCase(E.Artist + ' ' + E.Title);
+      E.MatchText := FoldSearchText(E.Artist + ' ' + E.Title);
+      S := StripPunct(E.MatchText);
+      if S <> E.MatchText then E.StripText := S else E.StripText := '';
+      S := SpacePunct(E.MatchText);
+      if (S <> E.MatchText) and (S <> E.StripText) then E.SpaceText := S else E.SpaceText := '';
       FEntries[N] := E; Inc(N);
     end;
     SetLength(FEntries, N); SetLength(FKeys, Seen.Count);
@@ -91,7 +141,8 @@ begin
   finally Seen.Free; end;
 end;
 procedure TLibrarySearchIndex.Execute;
-var Output: TLibraryIndexResult; Q: UTF8String; I, N: integer; Pending: boolean;
+var Output: TLibraryIndexResult; Q, QPunct, QSpace: UTF8String;
+  I, N: integer; Pending: boolean;
 begin
   BuildIndex;
   while not Terminated do begin
@@ -103,12 +154,14 @@ begin
       end;
     finally FLock.Release; end;
     if not Pending then begin FWake.WaitFor(100); Continue; end;
-    Q := UTF8LowerCase(Trim(Output.Query));
+    Q := FoldSearchText(Trim(Output.Query));
+    QPunct := StripPunct(Q);
+    QSpace := SpacePunct(Q);
     SetLength(Output.Entries, Length(FEntries)); N := 0;
     for I := 0 to High(FEntries) do begin
       if ((I and 127) = 0) and (Terminated or
          (InterlockedCompareExchange(FRevision, 0, 0) <> Output.Revision)) then Break;
-      if (Q = '') or (Pos(Q, FEntries[I].MatchText) > 0) then begin
+      if EntryMatches(FEntries[I], Q, QPunct, QSpace) then begin
         Output.Entries[N] := FEntries[I]; Inc(N);
       end;
     end;

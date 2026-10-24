@@ -20,6 +20,7 @@ import sys
 import tempfile
 import threading
 import time
+import unicodedata
 import urllib.parse
 import urllib.request
 
@@ -238,6 +239,15 @@ def media_links(document):
     # Only exact YouTube identifiers mentioned by the source, no guessed first hit.
     links = re.findall(r'(?:youtube\.com/(?:watch\?v=|embed/)|youtu\.be/)([A-Za-z0-9_-]{11})(?![A-Za-z0-9_-])', html.unescape(document))
     return list(dict.fromkeys('https://www.youtube.com/watch?v=' + x for x in links))
+
+
+def fold_query(s):
+    nfkd = unicodedata.normalize('NFKD', s)
+    res = ''.join(c for c in nfkd if not unicodedata.combining(c))
+    for src, dst in [('æ', 'ae'), ('Æ', 'ae'), ('œ', 'oe'), ('Œ', 'oe'), ('ß', 'ss'),
+                     ('ø', 'o'), ('Ø', 'o'), ('ł', 'l'), ('Ł', 'l'), ('đ', 'd'), ('Đ', 'd')]:
+        res = res.replace(src, dst)
+    return res.strip()
 
 
 def detect_preview(chart_lines):
@@ -683,8 +693,13 @@ def main(downloads_enabled=False, credentials_path=None):
                 if query.strip():
                     # One search box matches either artist or title, like the library.
                     by_id = {}
-                    for row in catalog.search(query, '', offset) + catalog.search('', query, offset):
-                        by_id.setdefault(row['id'], row)
+                    queries = [query]
+                    folded = fold_query(query)
+                    if folded and folded != query and folded not in queries:
+                        queries.append(folded)
+                    for q in queries:
+                        for row in catalog.search(q, '', offset) + catalog.search('', q, offset):
+                            by_id.setdefault(row['id'], row)
                     songs = list(by_id.values())[:30]
                 else:
                     songs = catalog.search(artist, title, offset)

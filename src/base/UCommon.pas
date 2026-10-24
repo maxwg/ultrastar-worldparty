@@ -1,4 +1,4 @@
-﻿{*
+{*
     UltraStar WorldParty - Karaoke Game
 
 	UltraStar WorldParty is the legal property of its developers,
@@ -227,7 +227,7 @@ end;
 {* First remove accents and convert special letters to ASCII, later remove all special characters *}
 function RemoveSpecialChars(const Src: UTF8String): UTF8String;
 begin
-  Result := UTF8LowerCase(Trim(ReplaceRegExpr('[^a-zA-Z0-9]+', TEncoding.ASCII.GetString(TEncoding.ASCII.GetBytes(Src)), ' ', false)));
+  Result := UTF8LowerCase(Trim(ReplaceRegExpr('[^a-zA-Z0-9]+', FoldSearchText(Src), ' ', false)));
 end;
 
 function RGBToHex(R, G, B: integer): string;

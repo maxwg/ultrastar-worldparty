@@ -39,7 +39,7 @@ function ArtistBucket(const NormalizedArtist: UTF8String): Integer;
 var S: UTF8String; C: Char;
 begin
   Result := 0;
-  S := Trim(NormalizedArtist);
+  S := FoldSearchText(Trim(NormalizedArtist));
   if S = '' then Exit;
   C := UpCase(S[1]);
   if (C >= 'A') and (C <= 'Z') then Result := Ord(C) - Ord('A') + 1;
@@ -59,11 +59,12 @@ end;
 
 function FindArtistPrefixTarget(const Entries: array of TArtistSearchEntry;
   CurrentIndex: Integer; const Prefix: UTF8String): Integer;
-var Step, Candidate, Count: Integer;
+var Step, Candidate, Count: Integer; FoldedPrefix: UTF8String;
 begin
   Result := -1;
   Count := Length(Entries);
   if (Count = 0) or (Prefix = '') then Exit;
+  FoldedPrefix := FoldSearchText(Prefix);
   if CurrentIndex < -1 then CurrentIndex := -1;
   if CurrentIndex >= Count then CurrentIndex := Count - 1;
   // Start just after the current global song, wrapping once. Include the
@@ -71,8 +72,9 @@ begin
   for Step := 1 to Count do
   begin
     Candidate := (CurrentIndex + Step + Count) mod Count;
-    if Entries[Candidate].Visible and not Entries[Candidate].IsCategory
-      and UTF8StartsText(Prefix, Entries[Candidate].Artist) then
+    if Entries[Candidate].Visible and not Entries[Candidate].IsCategory and
+       (UTF8StartsText(FoldedPrefix, FoldSearchText(Entries[Candidate].Artist)) or
+        UTF8StartsText(Prefix, Entries[Candidate].Artist)) then
       Exit(Candidate);
   end;
 end;

@@ -136,6 +136,13 @@ function UTF8UpperCase(const str: UTF8String): UTF8String;
 function UTF8LowerCase(const str: UTF8String): UTF8String;
 
 {**
+ * Folds special characters, diacritics, accents, smart quotes and ligatures
+ * to their lower-case base ASCII representations for robust search matching.
+ *}
+function FoldSearchChar(Ch: UCS4Char): UTF8String;
+function FoldSearchText(const S: UTF8String): UTF8String;
+
+{**
  * Converts a UCS-4 char ch to its upper-case representation.
  *}
 function UCS4UpperCase(ch: UCS4Char): UCS4Char; overload;
@@ -515,6 +522,37 @@ end;
 function UTF8LowerCase(const str: UTF8String): UTF8String;
 begin
   Result := UTF8Encode(WideStringLowerCase(UTF8Decode(str)));
+end;
+
+function FoldSearchChar(Ch: UCS4Char): UTF8String;
+begin
+  case Ch of
+    Ord('A')..Ord('Z'): Result := Chr(Ch + 32);
+    0..Ord('A') - 1, Ord('Z') + 1..127: Result := Chr(Ch);
+    {$I UUnicodeFoldRanges.inc}
+  else
+    Result := UTF8LowerCase(UCS4ToUTF8String(Ch));
+  end;
+end;
+
+function FoldSearchText(const S: UTF8String): UTF8String;
+var
+  StrPtr: PAnsiChar;
+  Ch: UCS4Char;
+begin
+  Result := '';
+  if S = '' then Exit;
+  StrPtr := PChar(S);
+  while StrPtr^ <> #0 do
+  begin
+    if NextCharUTF8(StrPtr, Ch) then
+      Result := Result + FoldSearchChar(Ch)
+    else
+    begin
+      Result := Result + StrPtr^;
+      Inc(StrPtr);
+    end;
+  end;
 end;
 
 function UCS4UpperCase(ch: UCS4Char): UCS4Char;

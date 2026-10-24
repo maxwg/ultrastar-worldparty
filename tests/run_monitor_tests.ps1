@@ -10,7 +10,10 @@ $compiler = Join-Path $CompilerRoot 'installed\bin\i386-win32\fpc.exe'
 $flags = @('-n','-Si','-Sg','-Sc','-O2',
   ('-Fu'+(Join-Path $repo 'build\ui-clean')),
   ('-Fu'+(Join-Path $CompilerRoot 'installed\units\i386-win32\*')),
-  ('-Fu'+(Join-Path $repo 'src\base')),('-Fi'+(Join-Path $repo 'src')),
+  ('-Fu'+(Join-Path $repo 'src\base')),
+  ('-Fu'+(Join-Path $repo 'src\screens')),
+  ('-Fu'+(Join-Path $repo 'src\menu')),
+  ('-Fi'+(Join-Path $repo 'src')),
   ('-FD'+(Join-Path $CompilerRoot 'b\install\binw32')),
   ('-FE'+$out),('-FU'+$out))
 foreach($test in @('voice_monitor_test','voice_monitor_stream_test')) {
