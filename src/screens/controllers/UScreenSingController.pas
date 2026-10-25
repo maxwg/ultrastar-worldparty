@@ -556,14 +556,6 @@ begin
   ClearSettings;
   Party.CallBeforeSing;
 
-  if Assigned(LastSongLog) then
-  begin
-    for I := 0 to High(AudioInputProcessor.Sound) do
-      if AudioInputProcessor.Sound[I] <> nil then
-        AudioInputProcessor.Sound[I].Clear();
-    LastSongLog.StartSession(CurrentSong);
-  end;
-
   // prepare players
   SetLength(Player, PlayersPlay);
 
@@ -582,6 +574,14 @@ begin
     CatSongs.Selected := PlaylistMedley.Song[PlaylistMedley.CurrentMedleySong-1];
 
   CurrentSong := CatSongs.Song[CatSongs.Selected];
+
+  if Assigned(LastSongLog) then
+  begin
+    for I := 0 to High(AudioInputProcessor.Sound) do
+      if AudioInputProcessor.Sound[I] <> nil then
+        AudioInputProcessor.Sound[I].Clear();
+    LastSongLog.StartSession(CurrentSong);
+  end;
 
   for I := 0 to High(screenSingViewRef.StaticDuet) do
     Statics[screenSingViewRef.StaticDuet[I]].Visible := CurrentSong.isDuet and (PlayersPlay > 1);

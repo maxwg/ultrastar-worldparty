@@ -24,6 +24,7 @@
 program WorldParty;
 
 {$IFDEF MSWINDOWS}
+  {$SetPEFlags $20} // Enable IMAGE_FILE_LARGE_ADDRESS_AWARE (4GB user address space on 64-bit Windows)
   {$R '..\res\link.res' '..\res\link.rc'}
 {$ENDIF}
 

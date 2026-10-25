@@ -188,7 +188,7 @@ procedure DrawPitchOverlays;
 var
   P, N, Cents, T, Range, K: Integer;
   Scale, PX, PY, RawPY, FoldedMidi, PreviousMidi, H, MinY, MaxY, TX, TY, TX2, TY2,
-    TargetMidi, R, G, B, Radius: Real;
+    TargetMidi, R, G, B, Radius, AgeAlpha: Real;
   Estimate: TPitchEstimate;
   Feedback: TPitchFeedback;
   LabelText: UTF8String;
@@ -205,15 +205,15 @@ begin
       Scale := W / Scale;
       SetFontStyle(ftOutline2);
       ResetFont;
-      SetOutlineColor(0, 0, 0, 0.9);
-      SetFontSize(14);
-      glColor4f(1, 1, 1, 0.75);
+      SetOutlineColor(0, 0, 0, 0.55);
+      SetFontSize(12);
+      glColor4f(0.92, 0.96, 1.0, 0.55);
       if Ini.NoteNames = 1 then
       for N := 0 to HighNote do
         if Note[N].NoteType in [ntNormal, ntGolden] then
         begin
           PX := X + (Note[N].Start - Note[0].Start)*Scale + 10*ScreenX + 2;
-          PY := Y - (Note[N].Tone-BaseNote)*Space/2 - NotesH[Player] - 13;
+          PY := Y - (Note[N].Tone-BaseNote)*Space/2 - NotesH[Player] - 11;
           LabelText := PitchName(Note[N].Tone+60);
           { Skip labels that cannot fit their note instead of overlapping. }
           if glTextWidth(LabelText) <= Note[N].Length*Scale then
@@ -268,24 +268,23 @@ begin
         RawPY := Y - (Estimate.Midi-60-BaseNote)*Space/2;
         MinY := Y-100;
         MaxY := Y+20;
-        H := 2.7;
+        { Subtle, slender pitch line that sits cleanly over target bars without overpowering them. }
+        H := 1.4;
         glDisable(GL_TEXTURE_2D);
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        { A fixed playhead makes timing legible even while the singer is silent.
-          Keep its translucent wash behind the live trace. }
-        glColor4f(0.35, 0.80, 1.0, 0.10);
+        { Delicate playhead guide: soft narrow wash and subtle hairline. }
+        glColor4f(0.35, 0.80, 1.0, 0.04);
         glBegin(GL_QUADS);
-          glVertex2f(PX-4, MinY); glVertex2f(PX+4, MinY);
-          glVertex2f(PX+4, MaxY); glVertex2f(PX-4, MaxY);
+          glVertex2f(PX-2, MinY); glVertex2f(PX+2, MinY);
+          glVertex2f(PX+2, MaxY); glVertex2f(PX-2, MaxY);
         glEnd;
-        glColor4f(0.76, 0.96, 1.0, 0.65);
+        glColor4f(0.80, 0.94, 1.0, 0.25);
         glBegin(GL_LINES);
           glVertex2f(PX, MinY); glVertex2f(PX, MaxY);
         glEnd;
         { Batch the whole trail into one GL_QUADS submission per panel.
-          Vertex colors may change inside glBegin; thousands of separate
-          glBegin/glEnd calls used to dominate longer phrases. }
+          Older trail segments gently taper in opacity so the line stays subtle. }
         glBegin(GL_QUADS);
         with PitchTraces[Player] do
         for T := 1 to Count-1 do
@@ -301,21 +300,23 @@ begin
                (Abs(FoldedMidi-PreviousMidi) <= 7) and
                (TY >= MinY) and (TY <= MaxY) and (TY2 >= MinY) and (TY2 <= MaxY) then
             begin
+              if Count > 1 then
+                AgeAlpha := 0.38 + 0.44 * (T / (Count - 1))
+              else
+                AgeAlpha := 0.82;
               case Points[T].Feedback of
                 pfAccurate: begin R := 0.35; G := 1.0; B := 0.66; end;
                 pfClose:    begin R := 1.0; G := 0.81; B := 0.34; end;
                 pfOff:      begin R := 1.0; G := 0.39; B := 0.45; end;
                 else        begin R := 0.72; G := 0.89; B := 1.0; end;
               end;
-              { Dark edge separates a continuous colored voice trail from the
-                bright target-note textures. The inner stroke remains fixed
-                width at every pitch, rather than growing with volume. }
-              glColor4f(0.03, 0.06, 0.10, 0.88);
-              glVertex2f(TX, TY-H/2-1.5);
-              glVertex2f(TX2, TY2-H/2-1.5);
-              glVertex2f(TX2, TY2+H/2+1.5);
-              glVertex2f(TX, TY+H/2+1.5);
-              glColor4f(R, G, B, 0.98);
+              { Soft shadow edge keeps the slender voice trail legible against bright note bars. }
+              glColor4f(0.03, 0.06, 0.10, 0.32 * AgeAlpha);
+              glVertex2f(TX, TY-H/2-0.55);
+              glVertex2f(TX2, TY2-H/2-0.55);
+              glVertex2f(TX2, TY2+H/2+0.55);
+              glVertex2f(TX, TY+H/2+0.55);
+              glColor4f(R, G, B, AgeAlpha);
               glVertex2f(TX, TY-H/2);
               glVertex2f(TX2, TY2-H/2);
               glVertex2f(TX2, TY2+H/2);
@@ -331,14 +332,13 @@ begin
             pfOff:      begin R := 1.0; G := 0.39; B := 0.45; end;
             else        begin R := 0.72; G := 0.89; B := 1.0; end;
           end;
-          { Live pitch puck: larger halo + white-edged center, stationary at
-            the current time while the previous samples remain a trail. }
+          { Compact, refined live pitch puck at the playhead. }
           for K := 0 to 2 do
           begin
             case K of
-              0: begin Radius := 8; glColor4f(R, G, B, 0.20); end;
-              1: begin Radius := 4.5; glColor4f(0.02, 0.05, 0.09, 0.9); end;
-              else begin Radius := 3.0; glColor4f(R, G, B, 1.0); end;
+              0: begin Radius := 5.0; glColor4f(R, G, B, 0.12); end;
+              1: begin Radius := 2.9; glColor4f(0.02, 0.05, 0.09, 0.50); end;
+              else begin Radius := 2.1; glColor4f(R, G, B, 0.92); end;
             end;
             glBegin(GL_TRIANGLE_FAN);
               glVertex2f(PX, PY);
@@ -359,7 +359,9 @@ begin
           end;
           if RawPY < MinY then LabelText := LabelText + ' (above range)';
           if RawPY > MaxY then LabelText := LabelText + ' (below range)';
-          glColor4f(0.8, 0.95, 1.0, 0.9);
+          SetFontSize(11);
+          SetOutlineColor(0, 0, 0, 0.45);
+          glColor4f(0.82, 0.93, 1.0, 0.55);
           SetFontPos(X+W+10*ScreenX-glTextWidth(LabelText), MaxY+3);
           glPrint(LabelText);
         end;
@@ -621,7 +623,10 @@ begin;
   else
     Col := GetPlayerColor(Ini.PlayerColor[NrSound]);
 
-  glColor3f(Col.R, Col.G, Col.B);
+  glDisable(GL_TEXTURE_2D);
+  glEnable(GL_BLEND);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+  glColor4f(Col.R, Col.G, Col.B, 0.62);
 {
   if (ParamStr(1) = '-black') or (ParamStr(1) = '-fsblack') then
     glColor3f(1, 1, 1);
@@ -640,6 +645,7 @@ begin;
   glEnd;
 
   Sound.UnlockAnalysisBuffer();
+  glDisable(GL_BLEND);
 end;
 
 procedure SingDrawNoteLines(Left, Top, Right: real; Space: integer);

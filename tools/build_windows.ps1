@@ -14,8 +14,15 @@ try {
   if ($LASTEXITCODE -ne 0) { throw 'Resource compilation failed' }
   $arguments = @('-B','-n','-Si','-Sg','-Sc','-vewn',
     ('-Fu'+(Join-Path $CompilerRoot 'installed\units\i386-win32\*')),
-    ('-Fu'+(Join-Path $repo 'src\base')), ('-Fu'+(Join-Path $repo 'src\screens')),
-    ('-Fu'+(Join-Path $repo 'src\menu')), ('-Fi'+(Join-Path $repo 'src')),
+    ('-Fu'+(Join-Path $repo 'src\base')),
+    ('-Fu'+(Join-Path $repo 'src\screens')),
+    ('-Fu'+(Join-Path $repo 'src\screens\controllers')),
+    ('-Fu'+(Join-Path $repo 'src\screens\views')),
+    ('-Fu'+(Join-Path $repo 'src\menu')),
+    ('-Fu'+(Join-Path $repo 'src\media')),
+    ('-Fu'+(Join-Path $repo 'src\lua')),
+    ('-Fu'+(Join-Path $repo 'src\webSDK')),
+    ('-Fi'+(Join-Path $repo 'src')),
     ('-FD'+$binutils), 'WorldParty.dpr', ('-FE'+$out), ('-FU'+$out),
     '-O4','-Xs','-oWorldParty.exe')
   & $compiler @arguments *> (Join-Path $repo 'build\ui-clean-compile.log')

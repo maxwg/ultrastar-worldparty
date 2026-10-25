@@ -79,6 +79,7 @@ type
       function SetInputSource(SourceIndex: integer): boolean;
       function GetInputSource(): integer;
     public
+      destructor Destroy; override;
       function Open(): boolean;
       function Close(): boolean;
       function Start(): boolean; override;
@@ -246,11 +247,20 @@ begin
   Result := true;
 end;
 
+destructor TBassInputDevice.Destroy;
+begin
+  Stop();
+  Close();
+  inherited Destroy;
+end;
+
 function TBassInputDevice.Open(): boolean;
 var
   FormatFlags: DWORD;
   SourceIndex: integer;
   Latency: integer;
+  InitErr: integer;
+  InitialErrStr: string;
 begin
   Result := false;
 
@@ -261,13 +271,29 @@ begin
     Exit;
   end;
 
-  if (not BASS_RecordInit(BassDeviceID)) then
+  if RecordInitialized then
   begin
-    Log.LogError('BASS_RecordInit['+Name+']: ' +
-                 BassCore.ErrorGetString(), 'TBassInputDevice.Open');
-    Exit;
+    if not SelectCaptureDevice() then
+      RecordInitialized := false;
   end;
-  RecordInitialized := true;
+
+  if not RecordInitialized then
+  begin
+    if not BASS_RecordInit(BassDeviceID) then
+    begin
+      InitErr := BASS_ErrorGetCode();
+      if (InitErr = BASS_ERROR_ALREADY) and SelectCaptureDevice() then
+        RecordInitialized := true
+      else
+      begin
+        Log.LogError('BASS_RecordInit['+Name+']: ' +
+                     BassCore.ErrorGetString(), 'TBassInputDevice.Open');
+        Exit;
+      end;
+    end
+    else
+      RecordInitialized := true;
+  end;
 
   if not DeviceIdentityMatches() then
   begin
@@ -295,9 +321,43 @@ begin
                     @MicrophoneCallback, Self);
   if (RecordStream = 0) then
   begin
-    Log.LogError('BASS_RecordStart: ' + BassCore.ErrorGetString(), 'TBassInputDevice.Open');
-    Close();
-    Exit;
+    InitialErrStr := BassCore.ErrorGetString();
+    Log.LogWarn('BASS_RecordStart primary attempt failed (' + InitialErrStr +
+      '); retrying with default callback period for ' + Name, 'TBassInputDevice.Open');
+
+    // Retry 1: default BASS callback period (avoids driver buffer allocation rejection on custom period)
+    RecordStream := BASS_RecordStart(Round(AudioFormat.SampleRate), AudioFormat.Channels,
+                      FormatFlags or BASS_RECORD_PAUSE,
+                      @MicrophoneCallback, Self);
+
+    // Retry 2: clean driver reset (BASS_RecordFree + BASS_RecordInit) and retry
+    if (RecordStream = 0) then
+    begin
+      Log.LogWarn('BASS_RecordStart retry 1 failed (' + BassCore.ErrorGetString() +
+        '); performing clean driver reset for ' + Name, 'TBassInputDevice.Open');
+      Close();
+      SDL_Delay(30);
+      if BASS_RecordInit(BassDeviceID) then
+      begin
+        RecordInitialized := true;
+        RecordStream := BASS_RecordStart(Round(AudioFormat.SampleRate), AudioFormat.Channels,
+                          MakeLong(FormatFlags or BASS_RECORD_PAUSE, Latency),
+                          @MicrophoneCallback, Self);
+        if (RecordStream = 0) then
+          RecordStream := BASS_RecordStart(Round(AudioFormat.SampleRate), AudioFormat.Channels,
+                            FormatFlags or BASS_RECORD_PAUSE,
+                            @MicrophoneCallback, Self);
+      end;
+    end;
+
+    if (RecordStream <> 0) then
+      Log.LogStatus('BASS_RecordStart recovered on retry for ' + Name, 'TBassInputDevice.Open')
+    else
+    begin
+      Log.LogError('BASS_RecordStart: ' + BassCore.ErrorGetString(), 'TBassInputDevice.Open');
+      Close();
+      Exit;
+    end;
   end;
 
   // save current source selection and select new source
@@ -322,15 +382,14 @@ function TBassInputDevice.Start(): boolean;
 begin
   Result := false;
 
-  // recording already started -> stop first
-  if ((RecordStream <> 0) or RecordInitialized) and not Stop() then
+  // active recording stream -> stop stream first while keeping device initialized
+  if (RecordStream <> 0) and not Stop() then
   begin
     Log.LogError('Unable to clean up the previous BASS capture before restart',
       'TBassInputDevice.Start');
     Exit;
   end;
 
-  // TODO: Do not open the device here (takes too much time).
   if not Open() then
     Exit;
 
@@ -344,39 +403,36 @@ begin
   Result := true;
 end;
 
-{* Stop input-capturing on this device. *}
+{* Stop input-capturing on this device without tearing down BASS_RecordInit. *}
 function TBassInputDevice.Stop(): boolean;
 var
-  DeviceSelected: boolean;
   StopError: integer;
 begin
   Result := true;
 
   { Stop the channel handle even if the device vanished or its ID was reused. }
-  if (RecordStream <> 0) and not BASS_ChannelStop(RecordStream) then
+  if (RecordStream <> 0) then
   begin
-    StopError := BASS_ErrorGetCode();
-    { An invalid handle is already stopped; RecordFree below remains the cleanup check. }
-    if StopError <> BASS_ERROR_HANDLE then
+    if not BASS_ChannelStop(RecordStream) then
     begin
-      Log.LogError('BASS_ChannelStop: ' + BassCore.ErrorGetString(), 'TBassInputDevice.Stop');
-      Result := false;
+      StopError := BASS_ErrorGetCode();
+      if StopError <> BASS_ERROR_HANDLE then
+      begin
+        Log.LogError('BASS_ChannelStop: ' + BassCore.ErrorGetString(), 'TBassInputDevice.Stop');
+        Result := false;
+      end;
     end;
+    RecordStream := 0;
   end;
 
   if not RecordInitialized then
     Exit;
 
-  DeviceSelected := SelectCaptureDevice();
-  if not DeviceSelected then
+  if SelectCaptureDevice() and (SourceRestore >= 0) then
   begin
-    { Do not free the currently selected, possibly unrelated BASS device. }
-    Result := false;
-    Exit;
+    SetInputSource(SourceRestore);
+    SourceRestore := -1;
   end;
-
-  // TODO: Do not close the device here (takes too much time).
-  if not Close() then Result := false;
 end;
 
 function TBassInputDevice.Close(): boolean;
