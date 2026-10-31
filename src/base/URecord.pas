@@ -189,6 +189,7 @@ type
       procedure CheckCaptureHealth; virtual;
       procedure CaptureStart;
       procedure CaptureStop;
+      function IsCapturing: boolean; virtual;
   end;
 
   TSmallIntArray = array [0..(MaxInt div SizeOf(SmallInt))-1] of SmallInt;
@@ -923,6 +924,11 @@ begin
   end;
 
   Started := false;
+end;
+
+function TAudioInputBase.IsCapturing: boolean;
+begin
+  Result := Started;
 end;
 
 function TAudioInputBase.UnifyDeviceName(const name: UTF8String; deviceIndex: integer): UTF8String;

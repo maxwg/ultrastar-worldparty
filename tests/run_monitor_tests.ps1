@@ -16,7 +16,7 @@ $flags = @('-n','-Si','-Sg','-Sc','-O2',
   ('-Fi'+(Join-Path $repo 'src')),
   ('-FD'+(Join-Path $CompilerRoot 'b\install\binw32')),
   ('-FE'+$out),('-FU'+$out))
-foreach($test in @('voice_monitor_test','voice_monitor_stream_test')) {
+foreach($test in @('voice_monitor_test','voice_monitor_stream_test','windows_device_notify_test')) {
   & $compiler @flags (Join-Path $PSScriptRoot ($test+'.pas')) *> (Join-Path $out ($test+'-compile.log'))
   if($LASTEXITCODE -ne 0) {
     Get-Content (Join-Path $out ($test+'-compile.log'))

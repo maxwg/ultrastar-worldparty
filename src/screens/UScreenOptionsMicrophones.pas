@@ -88,6 +88,7 @@ type
       procedure StartPreview;
       procedure StopPreview;
       procedure UpdateInputDevice;
+      procedure InitControls(const PreferredDeviceName: UTF8String = '');
       function ValidateSettings: boolean;
       procedure ChangeVolume(VolumeChange: single);
       procedure DrawVolume(x, y, Width, Height: single);
@@ -96,10 +97,12 @@ type
     public
       ReturnToMain: boolean;
       constructor Create; override;
+      destructor  Destroy; override;
       function    Draw: boolean; override;
       function    ParseInput(PressedKey: cardinal; CharCode: UCS4Char; PressedDown: boolean): boolean; override;
       procedure   OnShow; override;
       procedure   OnHide; override;
+      procedure   HandleDeviceChange;
   end;
 
 var //slider translation
@@ -212,6 +215,18 @@ begin
 end;
 
 constructor TScreenOptionsMicrophones.Create;
+begin
+  inherited Create;
+  InitControls('');
+end;
+
+destructor TScreenOptionsMicrophones.Destroy;
+begin
+  OnHide;
+  inherited Destroy;
+end;
+
+procedure TScreenOptionsMicrophones.InitControls(const PreferredDeviceName: UTF8String);
 var
   DeviceIndex:  integer;
   SourceIndex:  integer;
@@ -223,10 +238,10 @@ var
   ActivelyMappedNames: TAudioInputDeviceNames;
   ConfigIndex: integer;
   IsMapped: boolean;
-  //ButtonTheme: TThemeButton;
   WidgetYPos: integer;
+  PreferredFound: boolean;
 begin
-  inherited Create;
+  ClearWidgets;
 
   LoadFromTheme(Theme.OptionsMicrophones);
   AddText(110, 99, 0, 15, 1, 1, 1, 'Choose an input, assign it to Player 1, then speak to test.');
@@ -262,19 +277,38 @@ begin
   else
     CurrentDeviceIndex := -1;
 
-  // Reopen on the microphone already assigned to a player.
-  for DeviceIndex := 0 to High(VisibleDeviceIndices) do
-    if CurrentDeviceIndex >= 0 then
+  PreferredFound := false;
+  if (PreferredDeviceName <> '') and (CurrentDeviceIndex >= 0) then
+  begin
+    for DeviceIndex := 0 to High(VisibleDeviceIndices) do
     begin
       InputDevice := AudioInputProcessor.DeviceList[VisibleDeviceIndices[DeviceIndex]];
-      InputDeviceCfg := @Ini.InputDeviceConfig[InputDevice.CfgIndex];
-      IsMapped := false;
-      for ChannelIndex := 0 to High(InputDeviceCfg.ChannelToPlayerMap) do
-        if InputDeviceCfg.ChannelToPlayerMap[ChannelIndex] <> CHANNEL_OFF then IsMapped := true;
-      if IsMapped then begin CurrentDeviceIndex := DeviceIndex; Break; end;
+      if Trim(InputDevice.Name) = Trim(PreferredDeviceName) then
+      begin
+        CurrentDeviceIndex := DeviceIndex;
+        PreferredFound := true;
+        Break;
+      end;
     end;
+  end;
+
+  // If no preferred device requested or not found, reopen on the microphone already assigned to a player.
+  if not PreferredFound then
+  begin
+    for DeviceIndex := 0 to High(VisibleDeviceIndices) do
+      if CurrentDeviceIndex >= 0 then
+      begin
+        InputDevice := AudioInputProcessor.DeviceList[VisibleDeviceIndices[DeviceIndex]];
+        InputDeviceCfg := @Ini.InputDeviceConfig[InputDevice.CfgIndex];
+        IsMapped := false;
+        for ChannelIndex := 0 to High(InputDeviceCfg.ChannelToPlayerMap) do
+          if InputDeviceCfg.ChannelToPlayerMap[ChannelIndex] <> CHANNEL_OFF then IsMapped := true;
+        if IsMapped then begin CurrentDeviceIndex := DeviceIndex; Break; end;
+      end;
+  end;
+
   if CurrentDeviceIndex < 0 then
-    AddText(70, 240, 0, 20, 1, 1, 1, 'No microphone found. Connect one and reopen this screen.');
+    AddText(70, 240, 0, 20, 1, 1, 1, 'No microphone found. Connect one to detect automatically.');
 
   PreviewDeviceIndex := -1;
 
@@ -375,6 +409,38 @@ begin
 
   // set focus
   Interaction := 0;
+end;
+
+procedure TScreenOptionsMicrophones.HandleDeviceChange;
+var
+  PrevName: UTF8String;
+  ChannelIndex: integer;
+begin
+  PrevName := '';
+  if (CurrentDeviceIndex >= 0) and (CurrentDeviceIndex <= High(VisibleDeviceIndices)) and
+     (VisibleDeviceIndices[CurrentDeviceIndex] <= High(AudioInputProcessor.DeviceList)) then
+    PrevName := AudioInputProcessor.DeviceList[VisibleDeviceIndices[CurrentDeviceIndex]].Name;
+
+  StopPreview();
+
+  for ChannelIndex := 0 to High(PreviewChannel) do
+    if Assigned(PreviewChannel[ChannelIndex]) then
+      FreeAndNil(PreviewChannel[ChannelIndex]);
+  SetLength(PreviewChannel, 0);
+  SetLength(ChannelPeak, 0);
+
+  if AudioInput <> nil then
+    AudioInput.RefreshDevices;
+
+  InitControls(PrevName);
+
+  SetLength(PreviewChannel, MaxChannelCount);
+  for ChannelIndex := 0 to High(PreviewChannel) do
+    PreviewChannel[ChannelIndex] := TCaptureBuffer.Create();
+  SetLength(ChannelPeak, MaxChannelCount);
+
+  UpdateInputDevice();
+  Log.LogStatus('ScreenOptionsMicrophones refreshed device list on hardware change', 'ScreenOptionsMicrophones');
 end;
 
 procedure TScreenOptionsMicrophones.UpdateInputDevice;

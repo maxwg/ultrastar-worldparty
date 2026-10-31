@@ -52,6 +52,7 @@ uses
   UScreenOptionsLyrics,
   UScreenOptionsThemes,
   UScreenOptionsMicrophones,
+  UWindowsDeviceNotify,
   UScreenOptionsAdvanced,
   UScreenOptionsNetwork,
   UScreenOptionsWebcam,
@@ -357,6 +358,7 @@ end;
 
 procedure Finalize3D;
 begin
+  UnregisterSDLWindowForDeviceNotifications;
   UnloadFontTextures;
   SDL_QuitSubSystem(SDL_INIT_VIDEO);
 end;
@@ -520,6 +522,9 @@ NoDoubledResolution:
 
   SDL_SetWindowTitle(Screen, PChar(Title));
   SDL_SetWindowIcon(Screen, UImage.LoadImage(UPathUtils.ResourcesPath.Append(WINDOW_ICON))); //load icon image (must be 32x32 for win32)
+
+  if Screen <> nil then
+    RegisterSDLWindowForDeviceNotifications(Screen);
 end;
 
 function HasWindowState(Flag: integer): boolean;

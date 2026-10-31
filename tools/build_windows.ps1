@@ -24,7 +24,7 @@ try {
     ('-Fu'+(Join-Path $repo 'src\webSDK')),
     ('-Fi'+(Join-Path $repo 'src')),
     ('-FD'+$binutils), 'WorldParty.dpr', ('-FE'+$out), ('-FU'+$out),
-    '-O4','-Xs','-oWorldParty.exe')
+    '-Xm','-O4','-Xs','-oWorldParty.exe')
   & $compiler @arguments *> (Join-Path $repo 'build\ui-clean-compile.log')
   if ($LASTEXITCODE -ne 0) {
     Get-Content (Join-Path $repo 'build\ui-clean-compile.log') -Tail 25

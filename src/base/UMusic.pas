@@ -558,6 +558,7 @@ type
       procedure CheckCaptureHealth;
       procedure CaptureStart;
       procedure CaptureStop;
+      function IsCapturing: boolean;
   end;
 
 type
@@ -984,14 +985,17 @@ procedure TSoundLibrary.LoadSounds();
 begin
   UnloadSounds();
 
-  Start   := AudioPlayback.OpenSound(SoundPath.Append('forward sound.mp3'));
-  Back    := AudioPlayback.OpenSound(SoundPath.Append('back sound.mp3'));
-  Option  := AudioPlayback.OpenSound(SoundPath.Append('option sound.mp3'));
-  BGMusic := AudioPlayback.OpenSound(SoundPath.Append('background track.mp3'));
-  BeatClick := UMusic.AudioPlayback.OpenSound(UPathUtils.SoundPath.Append('beat click.mp3'));
+  if AudioPlayback <> nil then
+  begin
+    Start   := AudioPlayback.OpenSound(SoundPath.Append('forward sound.mp3'));
+    Back    := AudioPlayback.OpenSound(SoundPath.Append('back sound.mp3'));
+    Option  := AudioPlayback.OpenSound(SoundPath.Append('option sound.mp3'));
+    BGMusic := AudioPlayback.OpenSound(SoundPath.Append('background track.mp3'));
+    BeatClick := AudioPlayback.OpenSound(UPathUtils.SoundPath.Append('beat click.mp3'));
 
-  if (BGMusic <> nil) then
-    BGMusic.Loop := True;
+    if (BGMusic <> nil) then
+      BGMusic.Loop := True;
+  end;
 end;
 
 procedure TSoundLibrary.UnloadSounds();
@@ -1015,7 +1019,8 @@ end;
 
 procedure TSoundLibrary.StartBgMusic();
 begin
-  if (TBackgroundMusicOption(Ini.BackgroundMusicOption) = bmoOn) and
+  if (AudioPlayback <> nil) and
+    (TBackgroundMusicOption(Ini.BackgroundMusicOption) = bmoOn) and
     (Soundlib.BGMusic <> nil) and not (Soundlib.BGMusic.Status = ssPlaying) then
   begin
     AudioPlayback.PlaySound(Soundlib.BGMusic);

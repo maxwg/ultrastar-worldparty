@@ -112,6 +112,7 @@ Type
    __WMINFO_WINDOWS = record
       window: HWND; {**< The window handle *}
       hdc:    HDC;  {**< The window device context *}
+      hinstance: HINST; {**< The instance handle *}
    end;
 {$ENDIF}
 {$IFDEF SDL_VIDEO_DRIVER_WINRT} // Since SDL 2.0.3
@@ -181,30 +182,36 @@ Type
    TSDL_SysWMinfo = record
       version: TSDL_version;
       subsystem: TSDL_SYSWM_TYPE;
-      {$IFDEF SDL_VIDEO_DRIVER_WINDOWS}
-        win : __WMINFO_WINDOWS;
-      {$ELSE} {$IFDEF SDL_VIDEO_DRIVER_WINRT}
-        winrt : __WMINFO_WINRT;
-      {$ELSE} {$IFDEF SDL_VIDEO_DRIVER_X11}
-        x11 : __WMINFO_X11;
-      {$ELSE} {$IFDEF SDL_VIDEO_DRIVER_DIRECTFB}
-        dfb : __WMINFO_DFB;
-      {$ELSE} {$IFDEF SDL_VIDEO_DRIVER_COCOA}
-        cocoa : __WMINFO_COCOA;
-      {$ELSE} {$IFDEF SDL_VIDEO_DRIVER_UIKIT}
-        uikit : __WMINFO_UIKIT;
-      {$ELSE} {$IFDEF SDL_VIDEO_DRIVER_WAYLAND}
-        wl : __WMINFO_WAYLAND;
-      {$ELSE} {$IFDEF SDL_VIDEO_DRIVER_MIR}
-        mir : __WMINFO_MIR;
-      {$ELSE} {$IFDEF SDL_VIDEO_DRIVER_ANDROID}
-        android: __WMINFO_ANDROID;
-      {$ELSE} {$IFDEF SDL_VIDEO_DRIVER_VIVANTE}
-        vivante: __WMINFO_VIVANTE;
-      {$ELSE}
-        (* Cannot have empty record case *)
-        dummy: integer;
-      {$ENDIF} {$ENDIF} {$ENDIF} {$ENDIF} {$ENDIF} {$ENDIF} {$ENDIF} {$ENDIF} {$ENDIF} {$ENDIF}
+      case integer of
+        0: (
+          {$IFDEF SDL_VIDEO_DRIVER_WINDOWS}
+            win : __WMINFO_WINDOWS;
+          {$ELSE} {$IFDEF SDL_VIDEO_DRIVER_WINRT}
+            winrt : __WMINFO_WINRT;
+          {$ELSE} {$IFDEF SDL_VIDEO_DRIVER_X11}
+            x11 : __WMINFO_X11;
+          {$ELSE} {$IFDEF SDL_VIDEO_DRIVER_DIRECTFB}
+            dfb : __WMINFO_DFB;
+          {$ELSE} {$IFDEF SDL_VIDEO_DRIVER_COCOA}
+            cocoa : __WMINFO_COCOA;
+          {$ELSE} {$IFDEF SDL_VIDEO_DRIVER_UIKIT}
+            uikit : __WMINFO_UIKIT;
+          {$ELSE} {$IFDEF SDL_VIDEO_DRIVER_WAYLAND}
+            wl : __WMINFO_WAYLAND;
+          {$ELSE} {$IFDEF SDL_VIDEO_DRIVER_MIR}
+            mir : __WMINFO_MIR;
+          {$ELSE} {$IFDEF SDL_VIDEO_DRIVER_ANDROID}
+            android: __WMINFO_ANDROID;
+          {$ELSE} {$IFDEF SDL_VIDEO_DRIVER_VIVANTE}
+            vivante: __WMINFO_VIVANTE;
+          {$ELSE}
+            (* Cannot have empty record case *)
+            dummy_int: integer;
+          {$ENDIF} {$ENDIF} {$ENDIF} {$ENDIF} {$ENDIF} {$ENDIF} {$ENDIF} {$ENDIF} {$ENDIF} {$ENDIF}
+        );
+        1: (
+          dummy: array[0..63] of Byte;
+        );
    end;
 
 {* Function prototypes *}

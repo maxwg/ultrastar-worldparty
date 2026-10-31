@@ -139,8 +139,7 @@ type
       procedure AddSelectSlideOption(SelectNo: cardinal; const AddText: UTF8String; Prefix: string = ''); overload;
       procedure UpdateSelectSlideOptions(ThemeSelectSlide: TThemeSelectSlide; SelectNum: integer; const Values: array of UTF8String; var Data: integer; Prefix: string = '');
 
-//      function AddWidget(X, Y : UInt16; WidgetSrc : PSDL_Surface): Int16;
-//      procedure ClearWidgets(MinNumber : Int16);
+      procedure ClearWidgets;
       procedure FadeTo(Screen: PMenu); overload;
       procedure FadeTo(Screen: PMenu; aSound: TAudioPlaybackStream); overload;
       //popup hack
@@ -217,6 +216,38 @@ uses
   UMenuBackgroundTexture,
   UMenuBackgroundVideo,
   UMenuBackgroundFade;
+
+procedure TMenu.ClearWidgets;
+var
+  I: integer;
+begin
+  for I := 0 to High(Button) do
+    FreeAndNil(Button[I]);
+  SetLength(Button, 0);
+
+  for I := 0 to High(ButtonCollection) do
+    FreeAndNil(ButtonCollection[I]);
+  SetLength(ButtonCollection, 0);
+
+  for I := 0 to High(SelectsS) do
+    FreeAndNil(SelectsS[I]);
+  SetLength(SelectsS, 0);
+
+  for I := 0 to High(Text) do
+    FreeAndNil(Text[I]);
+  SetLength(Text, 0);
+
+  for I := 0 to High(Statics) do
+    FreeAndNil(Statics[I]);
+  SetLength(Statics, 0);
+
+  for I := 0 to High(StaticsList) do
+    FreeAndNil(StaticsList[I]);
+  SetLength(StaticsList, 0);
+
+  SetLength(Interactions, 0);
+  SelInteraction := -1;
+end;
 
 destructor TMenu.Destroy;
 var

@@ -99,7 +99,8 @@ uses
   ULuaScreenSing,
   USongs,
   UTime,
-  UWebcam;
+  UWebcam,
+  UWindowsDeviceNotify;
 
 procedure Main;
 var
@@ -146,6 +147,7 @@ begin
     // without SDL_INIT_TIMER SDL_GetTicks() might return strange values
     SDL_SetHint(SDL_HINT_WINDOWS_DISABLE_THREAD_NAMING, '1');
     SDL_Init(SDL_INIT_VIDEO or SDL_INIT_TIMER);
+    InitWindowsDeviceNotifications;
 
     // create luacore first so other classes can register their events
     LuaCore := TLuaCore.Create;
@@ -187,66 +189,72 @@ begin
     //avatars cache
     UAvatars.Avatars := TAvatarDatabase.Create();
 
-    // Graphics
-    UGraphic.Initialize3D(WindowTitle);
+    try
+      // Graphics
+      UGraphic.Initialize3D(WindowTitle);
 
-    UMusic.InitializeSound();
-    UMusic.InitializeVideo();
+      UMusic.InitializeSound();
+      UMusic.InitializeVideo();
 
-    // Lyrics-engine with media reference timer
-    LyricsState := TLyricsState.Create();
+      // Lyrics-engine with media reference timer
+      LyricsState := TLyricsState.Create();
 
-    // Playlist Manager
-    PlaylistMan := TPlaylistManager.Create;
+      // Playlist Manager
+      PlaylistMan := TPlaylistManager.Create;
 
-    // GoldenStarsTwinkleMod
-    GoldenRec := TEffectManager.Create;
+      // GoldenStarsTwinkleMod
+      GoldenRec := TEffectManager.Create;
 
-    UJoystick.InitializeJoystick();
+      UJoystick.InitializeJoystick();
 
-    // Webcam
-    //Log.LogStatus('WebCam', 'Initialization');
-    //Webcam := TWebcam.Create;
-    UWebcam.IsEnabled:= false;
+      UWebcam.IsEnabled:= false;
 
-    // Lua
-    Party := TPartyGame.Create;
-    PartyTournament := TPartyTournament.Create;
+      // Lua
+      Party := TPartyGame.Create;
+      PartyTournament := TPartyTournament.Create;
 
-    LuaCore.RegisterModule('Log', ULuaLog_Lib_f);
-    LuaCore.RegisterModule('Gl', ULuaGl_Lib_f);
-    LuaCore.RegisterModule('TextGl', ULuaTextGl_Lib_f);
-    LuaCore.RegisterModule('Party', ULuaParty_Lib_f);
-    LuaCore.RegisterModule('ScreenSing', ULuaScreenSing_Lib_f);
+      LuaCore.RegisterModule('Log', ULuaLog_Lib_f);
+      LuaCore.RegisterModule('Gl', ULuaGl_Lib_f);
+      LuaCore.RegisterModule('TextGl', ULuaTextGl_Lib_f);
+      LuaCore.RegisterModule('Party', ULuaParty_Lib_f);
+      LuaCore.RegisterModule('ScreenSing', ULuaScreenSing_Lib_f);
 
-    LuaCore.LoadPlugins;
+      LuaCore.LoadPlugins;
 
-    LuaCore.DumpPlugins;
+      LuaCore.DumpPlugins;
 
-    { prepare software cursor }
-    Display.SetCursor;
+      { prepare software cursor }
+      Display.SetCursor;
 
-    {**
-      * Start background music
-      *}
-    SoundLib.StartBgMusic;
+      {**
+        * Start background music
+        *}
+      SoundLib.StartBgMusic;
 
-    // check microphone settings, goto Microphones options if they are corrupt
-    BadPlayer := AudioInputProcessor.ValidateSettings;
-    if (BadPlayer <> 0) then
-    begin
-      ScreenPopupError.ShowPopup(
-          Format(Language.Translate('ERROR_PLAYER_DEVICE_ASSIGNMENT'),
-          [BadPlayer]));
-      Display.CurrentScreen^.FadeTo( @ScreenOptionsMicrophones );
+      // check microphone settings, goto Microphones options if they are corrupt
+      BadPlayer := AudioInputProcessor.ValidateSettings;
+      if (BadPlayer <> 0) then
+      begin
+        ScreenPopupError.ShowPopup(
+            Format(Language.Translate('ERROR_PLAYER_DEVICE_ASSIGNMENT'),
+            [BadPlayer]));
+        Display.CurrentScreen^.FadeTo( @ScreenOptionsMicrophones );
+      end;
+
+      Log.LogBenchmark('Main load', 1);
+
+      //------------------------------
+      // Start Mainloop
+      //------------------------------
+      MainLoop;
+    except
+      on E: Exception do
+      begin
+        if Assigned(Log) then
+          Log.LogError('Startup exception: ' + E.ClassName + ': ' + E.Message + ' at ' + BackTraceStrFunc(ExceptAddr), 'MainStartup');
+        raise;
+      end;
     end;
-
-    Log.LogBenchmark('Main load', 1);
-
-    //------------------------------
-    // Start Mainloop
-    //------------------------------
-    MainLoop;
 
   {$IFNDEF Debug}
   finally
@@ -271,6 +279,8 @@ begin
 
     FinalizeJoyStick;
 
+    FinalizeWindowsDeviceNotifications;
+
     Log.LogStatus('Uninitialize 3D', 'Finalization');
     Finalize3D();
 
@@ -278,7 +288,7 @@ begin
     SDL_Quit();
 
     Log.LogStatus('Finalize Log', 'Finalization');
-    Log.Free;
+    FreeAndNil(Log);
   {$IFNDEF Debug}
   end;
   {$ENDIF}
@@ -308,7 +318,7 @@ begin
 
       // display
       try
-        if Assigned(AudioInput) then AudioInput.CheckCaptureHealth;
+        if AudioInput <> nil then AudioInput.CheckCaptureHealth;
       except
         on E: Exception do Log.LogError('AudioInput.CheckCaptureHealth: ' + E.Message, 'MainLoop');
       end;
@@ -396,9 +406,10 @@ begin
     case Event.type_ of
       SDL_AUDIODEVICEADDED, SDL_AUDIODEVICEREMOVED:
       begin
-        if (Event.adevice.iscapture <> 0) and Assigned(AudioInput) then
+        if (Event.adevice.iscapture <> 0) and (AudioInput <> nil) then
           AudioInput.HandleDeviceEvent(Event.adevice.which,
             Event.type_ = SDL_AUDIODEVICEADDED);
+        OnWindowsDeviceChangeDetected;
       end;
       SDL_QUITEV:
       begin
@@ -612,6 +623,9 @@ begin
       end;
     end; // case
   end; // while
+
+  if CheckAndResetAudioDeviceChangePending then
+    HandleAudioDeviceChange;
 
   if Display.NeedsCursorUpdate() then
   begin
