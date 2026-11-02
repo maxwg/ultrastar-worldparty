@@ -264,14 +264,14 @@ def detect_preview(chart_lines):
         if line.startswith('#'):
             k, _, v = line[1:].partition(':')
             headers[k.strip().upper()] = v.strip()
-        elif line.startswith((': ', '* ', 'F ')):
-            parts = line.split(maxsplit=4)
-            if len(parts) >= 5:
+        elif len(line) > 1 and line[0] in (':', '*', 'F', 'R', 'G') and (line[1].isspace() or line[1].isdigit() or line[1] == '-'):
+            parts = line[1:].split(maxsplit=3)
+            if len(parts) >= 4:
                 try:
-                    start_beat = int(parts[1])
-                    length = int(parts[2])
-                    pitch = int(parts[3])
-                    syllable = parts[4]
+                    start_beat = int(parts[0])
+                    length = int(parts[1])
+                    pitch = int(parts[2])
+                    syllable = parts[3] if len(parts) > 3 else ''
                     current_line.append((start_beat, length, pitch, syllable))
                 except ValueError:
                     pass
@@ -282,8 +282,13 @@ def detect_preview(chart_lines):
     if current_line:
         lines.append(current_line)
 
-    if 'PREVIEWSTART' in headers or 'PREVIEW' in headers:
-        return None
+    preview_val = headers.get('PREVIEWSTART') or headers.get('PREVIEW')
+    if preview_val:
+        try:
+            if float(preview_val.replace(',', '.')) > 0:
+                return None
+        except ValueError:
+            pass
 
     try:
         if 'BPM' in headers:
@@ -350,6 +355,24 @@ def detect_preview(chart_lines):
         return res
 
 
+def extract_preview_timestamp(chart_lines):
+    for line in chart_lines:
+        line = line.strip()
+        if line.startswith('#'):
+            k, _, v = line[1:].partition(':')
+            if k.strip().upper() in ('PREVIEWSTART', 'PREVIEW'):
+                try:
+                    val = float(v.strip().replace(',', '.'))
+                    if val > 0:
+                        return f'{val:.2f}'
+                except ValueError:
+                    pass
+    preview = detect_preview(chart_lines)
+    if preview and 'preview_start' in preview:
+        return preview['preview_start']
+    return '15.00'
+
+
 def prepare_chart(chart):
     # Preserve all non-file headers and their complete values, including colons.
     external = {'MP3', 'AUDIO', 'VIDEO', 'COVER', 'BACKGROUND', 'INSTRUMENTAL', 'VOCALS', 'ENCODING'}
@@ -364,7 +387,9 @@ def prepare_chart(chart):
             extra_headers.append(f"#MEDLEYSTARTBEAT:{preview['medley_start']}")
         if 'medley_end' in preview:
             extra_headers.append(f"#MEDLEYENDBEAT:{preview['medley_end']}")
-    prefix = '#MP3:media.mp4\n#VIDEO:media.mp4\n#ENCODING:UTF8\n'
+        lines = [line for line in lines
+                 if not (line.startswith('#') and line[1:].partition(':')[0].strip().upper() in ('PREVIEWSTART', 'PREVIEW'))]
+    prefix = '#MP3:media.mp4\n#VIDEO:media.mp4\n#ENCODING:UTF8\n#COVER:cover.jpg\n'
     if extra_headers:
         prefix += '\n'.join(extra_headers) + '\n'
     return prefix + '\n'.join(lines) + '\n'
@@ -595,6 +620,35 @@ def install_song(root, song_id, chart, url, cancelled, notify=emit, downloader='
             raise ValueError('Download cancelled.')
         (stage / 'song.txt').write_text(prepare_chart(chart), encoding='utf-8')
         (stage / 'source.json').write_text(json.dumps({'usdb_id': song_id, 'media': url}), encoding='utf-8')
+        # Extract cover frame from media.mp4 at detected preview timestamp
+        try:
+            ffmpeg_bin = shutil.which('ffmpeg')
+            if not ffmpeg_bin and probe:
+                candidate = Path(probe).parent / ('ffmpeg.exe' if os.name == 'nt' else 'ffmpeg')
+                if candidate.is_file():
+                    ffmpeg_bin = str(candidate)
+            if ffmpeg_bin and not cancelled.is_set():
+                preview_sec = extract_preview_timestamp(chart.splitlines())
+                cover_args = [ffmpeg_bin, '-y', '-ss', str(preview_sec), '-i', str(stage / 'media.mp4'),
+                              '-vframes', '1', '-q:v', '2', str(stage / 'cover.jpg')]
+                if os.name == 'nt':
+                    run_owned(cover_args, cwd=str(stage), timeout=30,
+                              stdout='capture', cancel=cancelled, cleanup_timeout=3,
+                              max_output_bytes=65536, hidden_console=True)
+                else:
+                    subprocess.run(cover_args, cwd=str(stage), capture_output=True, timeout=30)
+                if not (stage / 'cover.jpg').is_file() or (stage / 'cover.jpg').stat().st_size == 0:
+                    if not cancelled.is_set():
+                        fallback_args = [ffmpeg_bin, '-y', '-ss', '5.0', '-i', str(stage / 'media.mp4'),
+                                         '-vframes', '1', '-q:v', '2', str(stage / 'cover.jpg')]
+                        if os.name == 'nt':
+                            run_owned(fallback_args, cwd=str(stage), timeout=30,
+                                      stdout='capture', cancel=cancelled, cleanup_timeout=3,
+                                      max_output_bytes=65536, hidden_console=True)
+                        else:
+                            subprocess.run(fallback_args, cwd=str(stage), capture_output=True, timeout=30)
+        except Exception:
+            pass
         # Existing destination is never overwritten. IDs avoid hostile artist paths.
         if target.exists():
             raise ValueError('This chart was installed by another operation.')
@@ -606,8 +660,9 @@ def install_song(root, song_id, chart, url, cancelled, notify=emit, downloader='
         target.mkdir()  # exclusive creation: even an existing empty folder is preserved
         owned_target = True
         # Publish the chart last; the scanner cannot see a song before media exists.
-        for name in ('media.mp4', 'source.json', 'song.txt'):
-            (stage / name).rename(target / name)
+        for name in ('media.mp4', 'cover.jpg', 'source.json', 'song.txt'):
+            if (stage / name).is_file():
+                (stage / name).rename(target / name)
         published = True
         return str(target)
     finally:
@@ -632,7 +687,7 @@ def install_song(root, song_id, chart, url, cancelled, notify=emit, downloader='
         if child is not None and child.stdout is not None:
             child.stdout.close()
         if owned_target and not published:
-            for name in ('song.txt', 'source.json', 'media.mp4'):
+            for name in ('song.txt', 'source.json', 'media.mp4', 'cover.jpg'):
                 (target / name).unlink(missing_ok=True)
             try:
                 target.rmdir()
